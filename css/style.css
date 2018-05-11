@@ -1,0 +1,12 @@
+.game-canvas {
+    background-color: black;
+}
+#game-container > canvas {
+    display: block;
+    height: 100%;
+    width: 100%;
+}
+#game-container {
+    height: 100%;
+    width: 100%;
+}
