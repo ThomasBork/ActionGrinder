@@ -119,11 +119,19 @@ class STGameObject {
             object.updateRelativeVariables();
         });
     }
+    empty() {
+        this.children = [];
+    }
     removeChild(object) {
         this.children = this.children.filter(function(e) { return e !== object; });
+        if(object.parent == this) {
+            object.parent = null;
+        }
     }
     remove() {
-        this.parent.removeChild(this);
+        if(this.parent != null) {
+            this.parent.removeChild(this);
+        }
     }
     setContext(context) {
         this.context = context;
@@ -190,10 +198,14 @@ class STGameObject {
         return matchedObjects;
     }
     handleClick(x, y) {
-        if(this.onClick !== undefined) {
+        if(!this.isVisible) {
+            return false;
+        } 
+        else if(this.onClick !== undefined) {
             this.onClick(x, y);
             return true;
-        } else {
+        } 
+        else {
             return this.handleClickOnChildren(x, y);
         }
     }
@@ -443,7 +455,8 @@ class STText extends STGameObject {
             text: "",
             font: "Arial",
             fontSize: 14,
-            fontString: "14px Arial"
+            fontString: "14px Arial",
+            isRightToLeft: false
         }
 
         let settings = extend(defaults, options);
@@ -463,8 +476,12 @@ class STText extends STGameObject {
         this.context.save();
         this.context.font = this.fontString;
         this.context.fillStyle = this.color;
+        let drawX = this.x;
+        if(this.isRightToLeft) {
+            drawX = this.x + this.width - this.context.measureText(this.text).width;
+        }
     
-        this.context.fillText(this.text, this.x, this.y + this.fontSize);
+        this.context.fillText(this.text, drawX, this.y + this.fontSize);
         this.context.restore();
     }
 }
@@ -475,13 +492,18 @@ class STImage extends STGameObject {
         let defaults = {
             path: "",
             image: null,
-            isLoaded: false
+            isLoaded: false,
+            isFlippedHorizontally: false,
+            isFlippedVertically: false
         };
 
         let settings = extend(defaults, options);
 
         mergeObjects(this, settings);
-
+        this.setPath(this.path);
+    }
+    setPath(path) {
+        this.path = path;
         this.image = new Image();
         this.image.onload = () => {
             this.isLoaded = true;
@@ -490,7 +512,25 @@ class STImage extends STGameObject {
     }
     draw() {
         if(this.isLoaded) {
-            this.context.drawImage(this.image, this.x, this.y, this.width, this.height);
+            this.context.save();
+            let drawX = this.x;
+            let drawY = this.y;
+            if(this.isFlippedHorizontally && this.isFlippedVertically) {
+                this.context.scale(-1, -1);
+                drawX = -drawX - this.width;
+                drawY = -drawY - this.height;
+            }
+            else if(this.isFlippedHorizontally) {
+                this.context.scale(-1, 1);
+                drawX = -drawX - this.width;
+            }
+            else if(this.isFlippedVertically) {
+                this.context.scale(1, -1);
+                drawY = -drawY - this.height;
+            }
+            this.context.drawImage(this.image, drawX, drawY, this.width, this.height);
+            this.context.restore();
+            this.drawChildren();
         }
     }
 }
