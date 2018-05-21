@@ -45,6 +45,10 @@ function prettyNumber(number, digits) {
     return number.toFixed(digits);
 }
 
+function prettyWord(word) {
+    return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
 function randomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }

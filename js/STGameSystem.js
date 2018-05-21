@@ -19,7 +19,9 @@ class STGameObject {
             isVisible: true,
             parent: null,
             children: [],
-            customOnClick: null
+            customOnClick: null,
+            customOnMouseOver: null,
+            isMouseOver: false
         };
 
         let settings = extend(defaults, options);
@@ -199,6 +201,47 @@ class STGameObject {
         // No child handled the click event, return false.
         return false;
     }
+    handleMouseMove(x, y) {
+        if(!this.isVisible) {
+            return false;
+        } 
+        else if(this.onMouseMove !== undefined) {
+            this.isMouseOver = true;
+            this.onMouseMove(x, y);
+            return true;
+        } 
+        else {
+            this.isMouseOver = true;
+            return this.handleMouseMoveOnChildren(x, y);
+        }
+    }
+    handleMouseMoveOnChildren(x, y) {
+        // Reverse iteration to test top-most elements first
+        for(var i = this.children.length - 1; i >= 0; i--) {
+            let child = this.children[i];
+            // If the child contains the click
+            if(child.containsPoint(x, y)) {
+                // If the child handled the click
+                if(child.handleMouseMove(x, y)){
+                    return true;
+                }
+            }
+        }
+
+        // No child handled the click event, return false.
+        return false;
+    }
+    handleMouseLeave(x, y) {
+        if(this.isMouseOver && (!this.isVisible || !this.containsPoint(x, y))) {
+            if(this.onMouseLeave !== undefined) {
+                this.onMouseLeave();
+                this.isMouseOver = false;
+            }
+        }
+        this.children.forEach((child) => {
+            child.handleMouseLeave(x, y);
+        });
+    }
     getAncestor(type) {
         if(this.parent === null) {
             return null;
@@ -210,6 +253,14 @@ class STGameObject {
     }
     getContainingCanvas() {
         return this.getAncestor(STCanvas);
+    }
+    getGlobalPosition(x, y) {
+        let canvas = this.getContainingCanvas();
+        if(canvas === null) {
+            return {x: x, y: y};
+        } else {
+            return canvas.getGlobalPosition(canvas.x + x, canvas.y + y);
+        }
     }
     static compareZFrontToBack (objA, objB) {
         if(objA.z < objB.z){ return -1; }
@@ -298,6 +349,9 @@ class STGame extends STCanvas {
         this.htmlContainer.addEventListener("click", (e) => {
             this.handleGlobalClick(e.clientX, e.clientY);
         });
+        this.htmlContainer.addEventListener("mousemove", (e) => {
+            this.handleGlobalMouseMove(e.clientX, e.clientY);
+        });
         this.htmlContainer.addEventListener("keypress", (e) => {
             this.handleKeyPress(e.keyCode);
         });
@@ -334,7 +388,7 @@ class STGame extends STCanvas {
 
         this.delayNextGameLoop();
     }
-    handleGlobalClick(globalX, globalY) {
+    getLocalCoordinates(globalX, globalY) {
         let x = globalX;
         let y = globalY;
 
@@ -344,7 +398,20 @@ class STGame extends STCanvas {
         x *= this.width / this.canvas.offsetWidth;
         y *= this.height / this.canvas.offsetHeight;
 
+        return {x: x, y: y};
+    }
+    handleGlobalClick(globalX, globalY) {
+        let locals = this.getLocalCoordinates(globalX, globalY);
+        let x = locals.x;
+        let y = locals.y;
         return this.handleClick(x, y);
+    }
+    handleGlobalMouseMove(globalX, globalY) {
+        let locals = this.getLocalCoordinates(globalX, globalY);
+        let x = locals.x;
+        let y = locals.y;
+        this.handleMouseLeave(x, y);
+        return this.handleMouseMove(x, y);
     }
     handleKeyPress(keyCode) {
         if(this.onKeyPress !== undefined) {

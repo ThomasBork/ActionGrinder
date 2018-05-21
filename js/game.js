@@ -2,32 +2,32 @@ let PROPERTIES = {
     DAMAGE: {
         type: "attributeFlat",
         attribute: "damage",
-        min: 1,
-        max: 8
+        baseMin: 1,
+        baseMax: 8
     },
     SPEED: {
         type: "attributeFlat",
         attribute: "speed",
-        min: 0.05,
-        max: 0.2
+        baseMin: 0.02,
+        baseMax: 0.1
     },
     ARMOR: {
         type: "attributeFlat",
         attribute: "armor",
-        min: 1,
-        max: 20
+        baseMin: 1,
+        baseMax: 20
     },
     HEALTH: {
         type: "attributeFlat",
         attribute: "health",
-        min: 10,
-        max: 50
+        baseMin: 10,
+        baseMax: 50
     },
     REGENERATION: {
         type: "attributeFlat",
         attribute: "regeneration",
-        min: 0.1,
-        max: 2
+        baseMin: 0.1,
+        baseMax: 2
     }
 };
 
@@ -254,10 +254,12 @@ class Character extends ObservableObject {
         this.attributes = null;
         this.recalculateAttributes();
         this.currentHealth = this.attributes.health;
-
-        this.items = [];
     }
     recalculateAttributes() {
+        this.recalculateAttributesBasedOnLevel();
+        this.callListeners(this.listeners.onChange);
+    }
+    recalculateAttributesBasedOnLevel() {
         this.attributes = new Attributes();
 
         // Base attributes
@@ -272,15 +274,9 @@ class Character extends ObservableObject {
         for(var i = 1; i<this.level; i++) {
             this.attributes.add(levelAttributes);
         } 
-
-        // Item attributes addition
-
-        // Item attributes multipliers
-
-        this.callListeners(this.listeners.onChange);
     }
     dealDamageTo(character, dTime) {
-        let damageDealt = this.attributes.damage * dTime;
+        let damageDealt = this.attributes.damage * this.attributes.speed * dTime;
         character.takeDamage(damageDealt);
     }
     takeDamage(damageDealt) {
@@ -327,9 +323,9 @@ class Area extends Character {
         game.player.gainExperience(experienceGained);
         game.addRandomItem(this.level);
 
-        game.player.leaveArea();
-
         game.player.currentMap.onAreaComplete(this);
+
+        game.player.leaveArea();
 
         this.callListeners(this.listeners.onComplete);
     }
@@ -339,7 +335,7 @@ class Player extends Character {
     constructor() {
         super(
             new Attributes({
-                damage: 50,
+                damage: 30,
                 speed: 1,
                 health: 100,
                 regeneration: 4
@@ -368,6 +364,28 @@ class Player extends Character {
 
         this.currentMap = null;
         this.currentArea = null;
+    }
+    recalculateAttributes() {
+        this.recalculateAttributesBasedOnLevel();
+
+        // Item attributes addition
+        let addAdditiveProperties = (property) => {
+            if(property.type == "attributeFlat") {
+                this.attributes[property.attribute] += property.value;
+            }
+        }
+
+        for(var index in this.equippedItems){
+            let item = this.equippedItems[index];
+            if(item !== null) {
+                item.implicitProperties.forEach(addAdditiveProperties);
+                item.properties.forEach(addAdditiveProperties);
+            }
+        }
+
+        // Item attributes multipliers
+
+        this.callListeners(this.listeners.onChange);
     }
     update(dTime) {
         // Regeneration
@@ -439,6 +457,7 @@ class Player extends Character {
         this.unequipItem(slot);
         this.equippedItems[slot] = item;
         game.removeItemFromStash(item);
+        this.recalculateAttributes();
         this.callListeners(this.listeners.onItemEquip, item);
         item.callListeners(item.listeners.onEquip);
     }
@@ -447,6 +466,7 @@ class Player extends Character {
             let item = this.equippedItems[slot];
             game.addItemToStash(item);
             this.equippedItems[slot] = null;
+            this.recalculateAttributes();
             this.callListeners(this.listeners.onItemUnequip, item);
             item.callListeners(item.listeners.onUnequip);
         }
@@ -456,8 +476,6 @@ class Player extends Character {
         return 70 + 25 * (level - 1) + 30 * Math.pow(1.1, level - 1);
     }
 }
-
-
 
 class Item extends ObservableObject {
     constructor(options) {
@@ -475,6 +493,30 @@ class Item extends ObservableObject {
 
         this.listeners.onUnequip = [];
         this.listeners.onEquip = [];
+
+        this.initializeProperties();
+    }
+    initializeProperties() {
+        this.implicitProperties.forEach((property) => {property.min = property.baseMin;});
+        this.properties.forEach((property) => {property.min = property.baseMin;});
+    }
+    scaleToLevel() {
+        let scaleProperty = (property) => {
+            property.min = property.baseMin * (0.9 + 0.1 * this.level);
+            property.max = property.baseMax * (0.9 + 0.1 * this.level);
+        };
+        this.implicitProperties.forEach(scaleProperty);
+        this.properties.forEach(scaleProperty);
+
+        this.rollProperties();
+    }
+    rollProperties() {
+        let rollProperty = (property) => {
+            let value = randomFloat(property.min, property.max);
+            property.value = value;
+        };
+        this.implicitProperties.forEach(rollProperty);
+        this.properties.forEach(rollProperty);
     }
     static randomItem (level) {
         let itemType = randomElementWeighted([
@@ -502,8 +544,8 @@ class Item extends ObservableObject {
                         properties: [{
                             type: "attributeFlat",
                             attribute: "damage",
-                            min: 7,
-                            max: 15
+                            baseMin: 7,
+                            baseMax: 15
                         }]
                     },
                     {
@@ -511,13 +553,13 @@ class Item extends ObservableObject {
                         properties: [{
                             type: "attributeFlat",
                             attribute: "damage",
-                            min: 5,
-                            max: 10
+                            baseMin: 5,
+                            baseMax: 10
                         },{
                             type: "attributeFlat",
                             attribute: "speed",
-                            min: 0.05,
-                            max: 0.25
+                            baseMin: 0.03,
+                            baseMax: 0.15
                         }]
                     }
                 ]);
@@ -536,8 +578,8 @@ class Item extends ObservableObject {
                         properties: [{
                             type: "attributeFlat",
                             attribute: "speed",
-                            min: 0.1,
-                            max: 0.4
+                            baseMin: 0.1,
+                            baseMax: 0.4
                         }]
                     }
                 ]);
@@ -556,8 +598,8 @@ class Item extends ObservableObject {
                         properties: [{
                             type: "attributeFlat",
                             attribute: "armor",
-                            min: 10,
-                            max: 30
+                            baseMin: 10,
+                            baseMax: 30
                         }]
                     }
                 ]);
@@ -576,13 +618,13 @@ class Item extends ObservableObject {
                         properties: [{
                             type: "attributeFlat",
                             attribute: "armor",
-                            min: 1,
-                            max: 5
+                            baseMin: 1,
+                            baseMax: 5
                         }, {
                             type: "attributeFlat",
                             attribute: "speed",
-                            min: 0.05,
-                            max: 0.15
+                            baseMin: 0.05,
+                            baseMax: 0.15
                         }]
                     }
                 ]);
@@ -601,13 +643,13 @@ class Item extends ObservableObject {
                         properties: [{
                             type: "attributeFlat",
                             attribute: "armor",
-                            min: 1,
-                            max: 5
+                            baseMin: 1,
+                            baseMax: 5
                         }, {
                             type: "attributeFlat",
                             attribute: "speed",
-                            min: 0.05,
-                            max: 0.15
+                            baseMin: 0.05,
+                            baseMax: 0.15
                         }]
                     }
                 ]);
@@ -635,8 +677,6 @@ class Item extends ObservableObject {
             properties.push(propertyCopy);
         }
 
-        // TODO: Calculate actual value of each property
-
         let item = new Item({
             implicitProperties: implicitProperties,
             properties: properties,
@@ -645,6 +685,8 @@ class Item extends ObservableObject {
             rarity: propertyCount,
             level: level
         });
+
+        item.scaleToLevel();
 
         return item;
     }

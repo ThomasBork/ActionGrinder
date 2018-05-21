@@ -6,6 +6,10 @@ const COLORS = {
     IN_PROGRESS: "#669966",
     IN_PROGRESS_BORDER: "#AAAAAA"
 };
+const Z_VALUES = {
+    HOVER_INFO: -2,
+    SIDE_WINDOW: -1
+}
 
 class VGame extends STGame {
     constructor () {
@@ -40,6 +44,8 @@ class VGame extends STGame {
                 level: null,
                 health: null,
                 damage: null,
+                speed: null,
+                dps: null,
                 armor: null,
                 regeneration: null
             },
@@ -150,8 +156,10 @@ class VGame extends STGame {
         this.objects.playerStatsLabels.level = addLabelWithValueReturnValue("Level: ", "0", 50, playerStats);
         this.objects.playerStatsLabels.health = addLabelWithValueReturnValue("Health: ", "0", 80, playerStats);
         this.objects.playerStatsLabels.damage = addLabelWithValueReturnValue("Damage: ", "0", 110, playerStats);
-        this.objects.playerStatsLabels.armor = addLabelWithValueReturnValue("Armor: ", "0", 140, playerStats);
-        this.objects.playerStatsLabels.regeneration = addLabelWithValueReturnValue("Regeneration: ", "0", 170, playerStats);
+        this.objects.playerStatsLabels.speed = addLabelWithValueReturnValue("Speed: ", "0", 140, playerStats);
+        this.objects.playerStatsLabels.dps = addLabelWithValueReturnValue("Damage per second: ", "0", 170, playerStats);
+        this.objects.playerStatsLabels.armor = addLabelWithValueReturnValue("Armor: ", "0", 200, playerStats);
+        this.objects.playerStatsLabels.regeneration = addLabelWithValueReturnValue("Regeneration: ", "0", 230, playerStats);
 
         // Stash
         this.objects.windows.stash = this.createSideWindow("Stash", false);
@@ -252,7 +260,7 @@ class VGame extends STGame {
             hasCloseButton: true,
             isVisible: false,
             isLeft: isLeft,
-            z: -1
+            z: Z_VALUES.SIDE_WINDOW
         };
         if(isLeft) {
             options.left = 10;
@@ -309,7 +317,10 @@ class VGame extends STGame {
         player.listeners.onItemUnequip.push(() => {this.refreshPlayerUI(player);});
         player.listeners.onExperienceGain.push(() => {this.refreshPlayerUI(player);});
         player.listeners.onLevelUp.push(() => {this.refreshPlayerUI(player);});
-        player.listeners.onFightingStop.push(() => {this.refreshPlayerUI(player);});
+        player.listeners.onFightingStop.push(() => {
+            this.removeAreas();
+            this.refreshPlayerUI(player);
+        });
     }
     refreshPlayerUI (player) {
         this.objects.playerLevel.text = "Level: " + prettyNumber(player.level);
@@ -319,8 +330,10 @@ class VGame extends STGame {
         this.objects.playerStatsLabels.level.text = prettyNumber(player.level);
         this.objects.playerStatsLabels.health.text = prettyNumber(player.attributes.health);
         this.objects.playerStatsLabels.damage.text = prettyNumber(player.attributes.damage);
+        this.objects.playerStatsLabels.speed.text = prettyNumber(player.attributes.speed, 2);
+        this.objects.playerStatsLabels.dps.text = prettyNumber(player.attributes.damage * player.attributes.speed, 2);
         this.objects.playerStatsLabels.armor.text = prettyNumber(player.attributes.armor);
-        this.objects.playerStatsLabels.regeneration.text = prettyNumber(player.attributes.regeneration);
+        this.objects.playerStatsLabels.regeneration.text = prettyNumber(player.attributes.regeneration, 2);
 
         // Inventory
         for(var slot in player.equippedItems) {
@@ -331,6 +344,7 @@ class VGame extends STGame {
             } else {
                 let imagePath = VItem.getImagePath(playerSlot);
                 inventorySlot.image.setPath(imagePath);
+                inventorySlot.setHoverInfo(playerSlot);
                 inventorySlot.show();
             }
         }
@@ -724,6 +738,8 @@ class VInventoryItem extends STGameObject {
     constructor(options) {
         super(options);
         let defaults = {
+            hoverInfo: null,
+            item: null,
             image: null,
             isFlippedHorizontally: false
         }
@@ -741,6 +757,30 @@ class VInventoryItem extends STGameObject {
         });
         this.addChild(this.image);
     }
+    setHoverInfo(item) {
+        if(this.item !== item) {
+            this.item = item;
+            this.hoverInfo = VItem.buildHoverInfo(item);
+        }
+    }
+    refreshHoverInfoPosition(globalX, globalY) {
+        this.hoverInfo.left = globalX;
+        if(this.hoverInfo.left + this.hoverInfo.width > vGame.width) {
+            this.hoverInfo.left = vGame.width - this.hoverInfo.width;
+        }
+        this.hoverInfo.top = globalY;
+        if(this.hoverInfo.top + this.hoverInfo.height > vGame.height) {
+            this.hoverInfo.top = vGame.height - this.hoverInfo.height;
+        }
+        this.hoverInfo.updateRelativeVariables();
+    }
+    onMouseMove(x, y) {
+        this.refreshHoverInfoPosition(x, y);
+        this.hoverInfo.show();
+    }
+    onMouseLeave(){
+        this.hoverInfo.hide();
+    }
 }
 
 class VItem extends STGameObject {
@@ -753,7 +793,8 @@ class VItem extends STGameObject {
         );
         let defaults = {
             image: null,
-            item: null
+            item: null,
+            hoverInfo: null
         };
         let settings = extend(defaults, options);
         mergeObjects(this, settings);
@@ -799,15 +840,132 @@ class VItem extends STGameObject {
             isSizeRelativeToParent: true  
         }));
 
+        this.hoverInfo = VItem.buildHoverInfo(this.item);
+
         // Add listeners
         this.item.listeners.onEquip.push(()=>{
             removeElement(vGame.objects.itemsInStash, this);
+            this.hoverInfo.hide();
             this.remove();
             vGame.reorganizeStashItems();
         });
         this.item.listeners.onUnequip.push(()=>{
             vGame.objects.itemsInStash.push(this);
         });
+    }
+    refreshHoverInfoPosition(globalX, globalY) {
+        this.hoverInfo.left = globalX;
+        if(this.hoverInfo.left + this.hoverInfo.width > vGame.width) {
+            this.hoverInfo.left = vGame.width - this.hoverInfo.width;
+        }
+        this.hoverInfo.top = globalY;
+        if(this.hoverInfo.top + this.hoverInfo.height > vGame.height) {
+            this.hoverInfo.top = vGame.height - this.hoverInfo.height;
+        }
+        this.hoverInfo.updateRelativeVariables();
+    }
+    onMouseMove(x, y) {
+        let globalPosition = this.getGlobalPosition(x, y);
+        this.refreshHoverInfoPosition(globalPosition.x, globalPosition.y);
+        this.hoverInfo.show();
+    }
+    onMouseLeave() {
+        this.hoverInfo.hide();
+    }
+    static buildHoverInfo(item) {
+        let containerPadding = 10;
+        let width = 200;
+        let nameSize = 18;
+        let nameMargin = 20;
+        let marginAfterImplicit = 10;
+        let propertyHeight = 20;
+        let propertyMargin = 5;
+        let implicitCount = item.implicitProperties.length;
+        let propertyCount = item.properties.length;
+        let totalPropertyCount = implicitCount + propertyCount;
+        let height = 
+            nameSize + nameMargin +
+            (propertyHeight + propertyMargin) * implicitCount - propertyMargin + 
+            marginAfterImplicit +
+            (propertyHeight + propertyMargin) * propertyCount - propertyMargin + 
+            2 * containerPadding;
+
+        let hoverInfo = new STRect({
+            width: width,
+            height: height,
+            left: 0,
+            top: 0,
+            borderSize: 3,
+            borderColor: "black",
+            z: Z_VALUES.HOVER_INFO
+        });
+        vGame.addChild(hoverInfo);
+        hoverInfo.hide();
+
+        let addPropertyLine = (property, top) => {
+            if(property.type == "attributeFlat") {
+                let label = new STText({
+                    left: containerPadding,
+                    top: top,
+                    text: prettyWord(property.attribute),
+                    color: "black"
+                });
+    
+                let numberText = prettyNumber(property.value);
+                if(property.attribute == "regeneration" || property.attribute == "speed") {
+                    numberText = prettyNumber(property.value, 2);
+                }
+
+                let value = new STText({
+                    right: containerPadding,
+                    top: top,
+                    text: numberText,
+                    isRightToLeft: true,
+                    color: "black"
+                });
+    
+                hoverInfo.addChild(label);
+                hoverInfo.addChild(value);
+            }
+        };
+
+        hoverInfo.addChild(new STText({
+            left: containerPadding,
+            top: containerPadding,
+            text: item.name,
+            fontSize: nameSize,
+            color: "black"
+        }));
+
+        hoverInfo.addChild(new STRect({
+            left: containerPadding,
+            top: containerPadding + nameSize + nameMargin / 2 - 1, 
+            width: width - 2 * containerPadding,
+            height: 1,
+            color: "black"
+        }));
+
+        let implicitStartTop = containerPadding + nameSize + nameMargin;
+        for(var i = 0; i<implicitCount; i++) {
+            let top = implicitStartTop + i * (propertyHeight + propertyMargin);
+            addPropertyLine(item.implicitProperties[i], top);
+        }
+
+        let implicitEndTop = implicitStartTop + implicitCount * (propertyHeight + propertyMargin) - propertyMargin;
+        hoverInfo.addChild(new STRect({
+            left: containerPadding,
+            top: implicitEndTop + marginAfterImplicit / 2 - 1, 
+            width: width - 2 * containerPadding,
+            height: 1,
+            color: "black"
+        }));
+
+        for(var i = 0; i<propertyCount; i++) {
+            let top = marginAfterImplicit + implicitEndTop + i * (propertyHeight + propertyMargin);
+            addPropertyLine(item.properties[i], top);
+        }
+
+        return hoverInfo;
     }
     static getImagePath(item) {
         return "img/" + item.type + "_" + item.name.replace(" ", "") + ".png";
