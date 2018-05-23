@@ -71,11 +71,11 @@ class VGame extends STGame {
         };
         
         // Farm level container
-        let farmMapsContainer = new STGameObject({
-            top: 700,
-            left: this.width / 2 - 580,
-            width: 550,
-            height: 140
+        let farmMapsContainer = new VZoomableCanvas({
+            left: 0,
+            top: 100,
+            width: this.width,
+            height: 700
         });
         this.objects.farmMapsContainer = farmMapsContainer;
         this.addChild(farmMapsContainer);
@@ -92,7 +92,7 @@ class VGame extends STGame {
 
         // Area container
         let areasContainer = new STGameObject({
-            top: 300,
+            top: 800,
             left: this.width / 2,
             height: 150,
             width: 0
@@ -296,7 +296,7 @@ class VGame extends STGame {
         this.game = game;
         this.loadPlayer(game.player);
         this.loadStash(game.items);
-        this.loadFarmMaps(game.farmMaps);
+        this.loadFarmMaps(game.firstFarmMap);
 
         // Add listeners
         this.game.listeners.onItemCreated.push((item) => {
@@ -319,6 +319,7 @@ class VGame extends STGame {
         player.listeners.onLevelUp.push(() => {this.refreshPlayerUI(player);});
         player.listeners.onFightingStop.push(() => {
             this.removeAreas();
+            this.objects.farmMaps.forEach((map)=>{map.bar.hide();});
             this.refreshPlayerUI(player);
         });
     }
@@ -352,19 +353,24 @@ class VGame extends STGame {
     loadStash(stashItems) {
 
     }
-    loadFarmMaps(farmMaps) {
-        for(var i = 0; i<farmMaps.length; i++) {
-            let map = farmMaps[i];
+    loadFarmMaps(firstFarmMap) {
+        let loadFarmMap = (farmMap, row, column, rowCount) => {
             let vMap = new VFarmMap({
-                map: map,
-                right: i * 140,
-                top: 0,
+                map: farmMap,
+                left: column * 200,
+                top: this.objects.farmMapsContainer.height / 2 - rowCount / 2 * 140 + row * 140,
                 height: 130,
                 width: 130
             });
             this.objects.farmMaps.push(vMap);
             this.objects.farmMapsContainer.addChild(vMap);
-        }
+
+            for(var i = 0; i<farmMap.gatedMaps.length; i++) {
+                let map = farmMap.gatedMaps[i];
+                loadFarmMap(map, i, column + 1, farmMap.gatedMaps.length);
+            }
+        };
+        loadFarmMap(firstFarmMap, 0, 0, 1);
     }
     onUpdate(dTime) {
         this.game.update(dTime);
@@ -885,6 +891,7 @@ class VItem extends STGameObject {
         let totalPropertyCount = implicitCount + propertyCount;
         let height = 
             nameSize + nameMargin +
+            16 +
             (propertyHeight + propertyMargin) * implicitCount - propertyMargin + 
             marginAfterImplicit +
             (propertyHeight + propertyMargin) * propertyCount - propertyMargin + 
@@ -901,7 +908,6 @@ class VItem extends STGameObject {
         });
         vGame.addChild(hoverInfo);
         hoverInfo.hide();
-
         let addPropertyLine = (property, top) => {
             if(property.type == "attributeFlat") {
                 let label = new STText({
@@ -937,15 +943,31 @@ class VItem extends STGameObject {
             color: "black"
         }));
 
+        hoverInfo.addChild(new STText({
+            left: containerPadding,
+            top: containerPadding + nameSize + 5,
+            text: "Level",
+            color: "black",
+            fontSize: 12
+        }));
+        hoverInfo.addChild(new STText({
+            right: containerPadding,
+            top: containerPadding + nameSize + 5,
+            text: item.level,
+            isRightToLeft: true,
+            color: "black",
+            fontSize: 12
+        }));
+
         hoverInfo.addChild(new STRect({
             left: containerPadding,
-            top: containerPadding + nameSize + nameMargin / 2 - 1, 
+            top: containerPadding + nameSize + nameMargin / 2 - 1 + 16, 
             width: width - 2 * containerPadding,
             height: 1,
             color: "black"
         }));
 
-        let implicitStartTop = containerPadding + nameSize + nameMargin;
+        let implicitStartTop = containerPadding + nameSize + nameMargin + 10;
         for(var i = 0; i<implicitCount; i++) {
             let top = implicitStartTop + i * (propertyHeight + propertyMargin);
             addPropertyLine(item.implicitProperties[i], top);
@@ -969,5 +991,48 @@ class VItem extends STGameObject {
     }
     static getImagePath(item) {
         return "img/" + item.type + "_" + item.name.replace(" ", "") + ".png";
+    }
+}
+
+class VZoomableCanvas extends STCanvas {
+    constructor(options) {
+        super(options);
+        let defaults = {
+            isDragging: false,
+            dragPointX: null,
+            dragPointY: null
+        };
+        let settings = extend(defaults, options);
+        mergeObjects(this, settings);
+    }
+    onMouseDown(x, y) {
+        this.isDragging = true;
+        this.dragPointX = x;
+        this.dragPointY = y;
+    }
+    onMouseUp(x, y) {
+        this.isDragging = false;
+    }
+    onMouseMove(x, y) {
+        if(this.isDragging) {
+            this.viewportX -= this.dragPointX - x;
+            this.viewportY -= this.dragPointY - y;
+            this.dragPointX = x;
+            this.dragPointY = y;
+        }
+    }
+    onScroll(x, y, speed) {
+        let newScaleX = this.scaleX - 0.01;
+        let newScaleY = this.scaleY - 0.01;
+        if(speed < 0) {
+            newScaleX = this.scaleX + 0.01;
+            newScaleY = this.scaleX + 0.01;
+        }
+
+        this.viewportX += this.width * (this.scaleX - newScaleX) * 0.5;
+        this.viewportY += this.height * (this.scaleY - newScaleY) * 0.5;
+
+        this.scaleX = newScaleX;
+        this.scaleY = newScaleY;
     }
 }

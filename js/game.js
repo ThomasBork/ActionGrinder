@@ -58,20 +58,23 @@ class Game extends ObservableObject {
 
         this.areas = [];
         this.farmMaps = [];
+        this.firstFarmMap = null;
         this.bossMaps = [];
     }
     initialize() {
         this.player = new Player();
 
-        let farmMapCount = 4;
-        for(var i = 0; i<farmMapCount; i++) {
-            let map = new FarmMap();
+        let plainsMap = new FarmMap("Plains", 1);
+        let mountainMap = new FarmMap("Mountain", 5);
+        let swampMap = new FarmMap("Swamp", 10);
+        let graveyardMap = new FarmMap("Graveyard", 15);
 
-            if(i == 0) {
-                map.unlock();
-            }
-            this.farmMaps.push(map);
-        }
+        plainsMap.gatedMaps.push(mountainMap);
+        mountainMap.gatedMaps.push(swampMap);
+        mountainMap.gatedMaps.push(graveyardMap);
+
+        plainsMap.unlock();
+        this.firstFarmMap = plainsMap;
     }
     update(dTime) {
         this.player.update(dTime);
@@ -124,13 +127,15 @@ class Map extends ObservableObject {
 }
 
 class FarmMap extends Map {
-    constructor() {
+    constructor(name, level) {
         super();
 
         this.listeners.onStart = [];
 
+        this.name = name;
+        this.level = level;
         this.areaTypes = [];
-
+        this.gatedMaps = [];
         this.runsLeft = 1;
 
         this.randomizeAreaTypes();
@@ -140,6 +145,8 @@ class FarmMap extends Map {
         if(this.runsLeft <= 0) {
             this.reset();
         }
+
+        this.gatedMaps.forEach((map)=>{map.unlock();});
 
         this.callListeners(this.listeners.onComplete);
     }
@@ -257,6 +264,7 @@ class Character extends ObservableObject {
     }
     recalculateAttributes() {
         this.recalculateAttributesBasedOnLevel();
+        this.currentHealth = this.attributes.health;
         this.callListeners(this.listeners.onChange);
     }
     recalculateAttributesBasedOnLevel() {
@@ -544,8 +552,8 @@ class Item extends ObservableObject {
                         properties: [{
                             type: "attributeFlat",
                             attribute: "damage",
-                            baseMin: 7,
-                            baseMax: 15
+                            baseMin: 12,
+                            baseMax: 12
                         }]
                     },
                     {
@@ -553,13 +561,13 @@ class Item extends ObservableObject {
                         properties: [{
                             type: "attributeFlat",
                             attribute: "damage",
-                            baseMin: 5,
-                            baseMax: 10
+                            baseMin: 7,
+                            baseMax: 7
                         },{
                             type: "attributeFlat",
                             attribute: "speed",
-                            baseMin: 0.03,
-                            baseMax: 0.15
+                            baseMin: 0.1,
+                            baseMax: 0.1
                         }]
                     }
                 ]);
@@ -578,8 +586,8 @@ class Item extends ObservableObject {
                         properties: [{
                             type: "attributeFlat",
                             attribute: "speed",
-                            baseMin: 0.1,
-                            baseMax: 0.4
+                            baseMin: 0.2,
+                            baseMax: 0.2
                         }]
                     }
                 ]);
@@ -598,8 +606,8 @@ class Item extends ObservableObject {
                         properties: [{
                             type: "attributeFlat",
                             attribute: "armor",
-                            baseMin: 10,
-                            baseMax: 30
+                            baseMin: 25,
+                            baseMax: 25
                         }]
                     }
                 ]);
@@ -618,13 +626,13 @@ class Item extends ObservableObject {
                         properties: [{
                             type: "attributeFlat",
                             attribute: "armor",
-                            baseMin: 1,
+                            baseMin: 5,
                             baseMax: 5
                         }, {
                             type: "attributeFlat",
                             attribute: "speed",
-                            baseMin: 0.05,
-                            baseMax: 0.15
+                            baseMin: 0.1,
+                            baseMax: 0.1
                         }]
                     }
                 ]);
@@ -643,13 +651,13 @@ class Item extends ObservableObject {
                         properties: [{
                             type: "attributeFlat",
                             attribute: "armor",
-                            baseMin: 1,
+                            baseMin: 5,
                             baseMax: 5
                         }, {
                             type: "attributeFlat",
                             attribute: "speed",
-                            baseMin: 0.05,
-                            baseMax: 0.15
+                            baseMin: 0.1,
+                            baseMax: 0.1
                         }]
                     }
                 ]);

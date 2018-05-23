@@ -145,9 +145,10 @@ class STGameObject {
             }
         }
     }
-    containsPoint(x, y) {
-        return ( this.x <= x && x < this.x + this.width ) &&
-            ( this.y <= y && y < this.y + this.height );
+    containsPoint(globalX, globalY) {
+        let locals = this.getLocalCoordinates(globalX, globalY);
+        return ( this.x <= locals.x && locals.x < this.x + this.width ) &&
+            ( this.y <= locals.y && locals.y < this.y + this.height );
     }
     findObjects(predicate) {
         let matchedObjects = [];
@@ -173,74 +174,107 @@ class STGameObject {
 
         return matchedObjects;
     }
-    handleClick(x, y) {
+    getLocalCoordinates(globalX, globalY) {
+        let canvas = this.getContainingCanvas();
+        if(canvas !== null) {
+            let localCoordinates = canvas.getLocalCoordinates(globalX, globalY);
+            return {
+                x: (localCoordinates.x - canvas.x - canvas.viewportX) / canvas.scaleX,
+                y: (localCoordinates.y - canvas.y - canvas.viewportY) / canvas.scaleY
+            }
+        } else {
+            return {
+                x: globalX,
+                y: globalY
+            };
+        }
+    }
+    getGlobalCoordinates(localX, localY) {
+        let canvas = this.getContainingCanvas();
+        if(canvas !== null) {
+            return canvas.getGlobalCoordinates(localX, localY);
+        } else {
+            return {
+                x: localX,
+                y: localY
+            };
+        }
+    }
+    handleSingleEvent(globalX, globalY, args, handlerName, onVisible, predicate) {
         if(!this.isVisible) {
             return false;
-        } 
-        else if(this.onClick !== undefined) {
-            this.onClick(x, y);
-            return true;
-        } 
-        else {
-            return this.handleClickOnChildren(x, y);
-        }
-    }
-    handleClickOnChildren(x, y) {
-        // Reverse iteration to test top-most elements first
-        for(var i = this.children.length - 1; i >= 0; i--) {
-            let child = this.children[i];
-            // If the child contains the click
-            if(child.containsPoint(x, y)) {
-                // If the child handled the click
-                if(child.handleClick(x, y)){
-                    return true;
+        } else { 
+            if(onVisible != undefined) {
+                onVisible(this);
+            }
+            let localCoordinates = this.getLocalCoordinates(globalX, globalY);
+            let predicateTest = true;
+            if(predicate != undefined){
+                predicateTest = predicate(this);
+            }
+            if(this[handlerName] !== undefined && predicateTest) {
+                let arg = [localCoordinates.x, localCoordinates.y];
+                args.forEach((element)=>{arg.push(element);});
+                this[handlerName].apply(this, arg);
+                return true;
+            } 
+            else {
+                // Reverse iteration to test top-most elements first
+                for(var i = this.children.length - 1; i >= 0; i--) {
+                    let child = this.children[i];
+                    // If the child contains the click
+                    if(child.containsPoint(globalX, globalY)) {
+                        // If the child handled the click
+                        if(child.handleSingleEvent(globalX, globalY, args, handlerName, onVisible, predicate)){
+                            return true;
+                        }
+                    }
                 }
+        
+                // No child handled the click event, return false.
+                return false;
             }
         }
-
-        // No child handled the click event, return false.
-        return false;
     }
-    handleMouseMove(x, y) {
-        if(!this.isVisible) {
-            return false;
-        } 
-        else if(this.onMouseMove !== undefined) {
-            this.isMouseOver = true;
-            this.onMouseMove(x, y);
-            return true;
-        } 
-        else {
-            this.isMouseOver = true;
-            return this.handleMouseMoveOnChildren(x, y);
-        }
+    handleMouseMove(globalX, globalY) {
+        this.handleSingleEvent(globalX, globalY, [], "onMouseMove", (element) => {
+            element.isMouseOver = true;
+        });
     }
-    handleMouseMoveOnChildren(x, y) {
-        // Reverse iteration to test top-most elements first
-        for(var i = this.children.length - 1; i >= 0; i--) {
-            let child = this.children[i];
-            // If the child contains the click
-            if(child.containsPoint(x, y)) {
-                // If the child handled the click
-                if(child.handleMouseMove(x, y)){
-                    return true;
-                }
+    handleMouseDown(globalX, globalY) {
+        this.handleSingleEvent(globalX, globalY, [], "onMouseDown");
+        this.getGame().lastMouseDownEvent = {
+            date: new Date(),
+            globalX: globalX,
+            globalY: globalY
+        };
+    }
+    handleMouseUp(globalX, globalY) {
+        this.handleSingleEvent(globalX, globalY, [], "onMouseUp");
+        this.handleSingleEvent(globalX, globalY, [], "onClick", null, (element) => {
+            let event = element.getGame().lastMouseDownEvent;
+            if(event.date != null) {
+                let now = new Date().getTime();
+                let diff = now - event.date.getTime();
+                return diff < 100;
+            } else {
+                return false;
             }
-        }
-
-        // No child handled the click event, return false.
-        return false;
+        });
     }
-    handleMouseLeave(x, y) {
-        if(this.isMouseOver && (!this.isVisible || !this.containsPoint(x, y))) {
+    handleMouseLeave(globalX, globalY) {
+        if(this.isMouseOver && (!this.isVisible || !this.containsPoint(globalX, globalY))) {
             if(this.onMouseLeave !== undefined) {
                 this.onMouseLeave();
                 this.isMouseOver = false;
             }
         }
         this.children.forEach((child) => {
-            child.handleMouseLeave(x, y);
+            child.handleMouseLeave(globalX, globalY);
         });
+    }
+    handleScroll(globalX, globalY, speed) {
+        this.handleSingleEvent(globalX, globalY, [speed], "onScroll");
     }
     getAncestor(type) {
         if(this.parent === null) {
@@ -249,6 +283,13 @@ class STGameObject {
             return this.parent;
         } else {
             return this.parent.getAncestor(type);
+        }
+    }
+    getGame() {
+        if(this instanceof STGame) {
+            return this;
+        } else {
+            return this.parent.getGame();
         }
     }
     getContainingCanvas() {
@@ -312,15 +353,17 @@ class STCanvas extends STGameObject {
         return ( this.canvas.offsetLeft <= x && x < this.canvas.offsetLeft + this.canvas.offsetWidth ) &&
             ( this.canvas.offsetTop <= y && y < this.canvas.offsetTop + this.canvas.offsetHeight );
     }
-    handleClickOnChildren(globalX, globalY) {
-        let coordinates = this.translateGlobalCoordinates(globalX, globalY);
-        super.handleClickOnChildren(coordinates.x, coordinates.y);
-    }
-    translateGlobalCoordinates(globalX, globalY) {
-        return {
-            x: globalX - this.x,
-            y: globalY - this.y
+    getGlobalCoordinates(localX, localY) {
+        let relativeCoordinates = {
+            x: localX + this.x - this.viewportX,
+            y: localY + this.y - this.viewportY
         };
+        let canvas = this.getContainingCanvas();
+        if(canvas !== null) {
+            return canvas.getGlobalCoordinates(relativeCoordinates.x, relativeCoordinates.y);
+        } else {
+            return relativeCoordinates;
+        }
     }
 }
 
@@ -333,7 +376,12 @@ class STGame extends STCanvas {
             updateTimeoutId: null,
             updateInterval: 1000 / 60,
             lastUpdateTimestamp: null,
-            millisecondsToUpdate: 0
+            millisecondsToUpdate: 0,
+            lastMouseDownEvent: {
+                date: null,
+                globalX: null,
+                globalY: null
+            }
         };
 
         let settings = extend(defaults, options);
@@ -346,8 +394,11 @@ class STGame extends STCanvas {
         this.htmlContainer.focus();
 
         // Set up events
-        this.htmlContainer.addEventListener("click", (e) => {
-            this.handleGlobalClick(e.clientX, e.clientY);
+        this.htmlContainer.addEventListener("mousedown", (e) => {
+            this.handleGlobalMouseDown(e.clientX, e.clientY);
+        });
+        this.htmlContainer.addEventListener("mouseup", (e) => {
+            this.handleGlobalMouseUp(e.clientX, e.clientY);
         });
         this.htmlContainer.addEventListener("mousemove", (e) => {
             this.handleGlobalMouseMove(e.clientX, e.clientY);
@@ -360,6 +411,9 @@ class STGame extends STCanvas {
         });
         this.htmlContainer.addEventListener("keydown", (e) => {
             this.handleKeyDown(e.keyCode);
+        });
+        this.htmlContainer.addEventListener("wheel", (e) => {
+            this.handleGlobalScroll(e.clientX, e.clientY, e.deltaY);
         });
     }
     start() {
@@ -388,9 +442,9 @@ class STGame extends STCanvas {
 
         this.delayNextGameLoop();
     }
-    getLocalCoordinates(globalX, globalY) {
-        let x = globalX;
-        let y = globalY;
+    getGameCoordinates(clientX, clientY) {
+        let x = clientX;
+        let y = clientY;
 
         // Apply css
         x -= this.canvas.offsetLeft;
@@ -400,16 +454,22 @@ class STGame extends STCanvas {
 
         return {x: x, y: y};
     }
-    handleGlobalClick(globalX, globalY) {
-        let locals = this.getLocalCoordinates(globalX, globalY);
-        let x = locals.x;
-        let y = locals.y;
-        return this.handleClick(x, y);
+    handleGlobalMouseDown(clientX, clientY) {
+        let gameCoordinates = this.getGameCoordinates(clientX, clientY);
+        let x = gameCoordinates.x;
+        let y = gameCoordinates.y;
+        return this.handleMouseDown(x, y);
     }
-    handleGlobalMouseMove(globalX, globalY) {
-        let locals = this.getLocalCoordinates(globalX, globalY);
-        let x = locals.x;
-        let y = locals.y;
+    handleGlobalMouseUp(clientX, clientY) {
+        let gameCoordinates = this.getGameCoordinates(clientX, clientY);
+        let x = gameCoordinates.x;
+        let y = gameCoordinates.y;
+        return this.handleMouseUp(x, y);
+    }
+    handleGlobalMouseMove(clientX, clientY) {
+        let gameCoordinates = this.getGameCoordinates(clientX, clientY);
+        let x = gameCoordinates.x;
+        let y = gameCoordinates.y;
         this.handleMouseLeave(x, y);
         return this.handleMouseMove(x, y);
     }
@@ -427,6 +487,12 @@ class STGame extends STCanvas {
         if(this.onKeyDown !== undefined) {
             this.onKeyDown(keyCode);
         }
+    }
+    handleGlobalScroll(clientX, clientY, speed) {
+        let gameCoordinates = this.getGameCoordinates(clientX, clientY);
+        let x = gameCoordinates.x;
+        let y = gameCoordinates.y;
+        return this.handleScroll(x, y, speed);
     }
 }
 
