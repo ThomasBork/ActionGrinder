@@ -24,10 +24,40 @@ let PROPERTIES = {
         baseMax: 50
     },
     REGENERATION: {
-        type: "attributeFlat",
+        type: "attributePercent",
         attribute: "regeneration",
-        baseMin: 0.1,
-        baseMax: 2
+        baseMin: 0.01,
+        baseMax: 0.05
+    },
+    PERCENT_DAMAGE: {
+        type: "attributePercent",
+        attribute: "damage",
+        baseMin: 0.01,
+        baseMax: 0.05
+    },
+    PERCENT_SPEED: {
+        type: "attributePercent",
+        attribute: "speed",
+        baseMin: 0.01,
+        baseMax: 0.05
+    },
+    PERCENT_ARMOR: {
+        type: "attributePercent",
+        attribute: "armor",
+        baseMin: 0.01,
+        baseMax: 0.05
+    },
+    PERCENT_HEALTH: {
+        type: "attributePercent",
+        attribute: "health",
+        baseMin: 0.01,
+        baseMax: 0.05
+    },
+    PERCENT_REGENERATION: {
+        type: "attributePercent",
+        attribute: "regeneration",
+        baseMin: 0.01,
+        baseMax: 0.05
     }
 };
 
@@ -71,7 +101,7 @@ class Game extends ObservableObject {
 
         plainsMap.gatedMaps.push(mountainMap);
         mountainMap.gatedMaps.push(swampMap);
-        mountainMap.gatedMaps.push(graveyardMap);
+        swampMap.gatedMaps.push(graveyardMap);
 
         plainsMap.unlock();
         this.firstFarmMap = plainsMap;
@@ -152,7 +182,7 @@ class FarmMap extends Map {
     }
     randomizeAreaTypes() {
         let areaCount = 2 + Math.round(Math.random() * 0.7); // 2: 2, 3: 5
-        let areaTypeOptions = ["Lethal", "Armored", "Tanky", "Regenerating", "Weak", "Squishy"];
+        let areaTypeOptions = ["lethal", "armored", "regenerating", "weak", "squishy"];
         this.areaTypes = [];
         for(var i = 0; i<areaCount; i++) {
             let areaType = randomElement(areaTypeOptions);
@@ -179,22 +209,20 @@ class FarmMap extends Map {
                 regeneration: 1
             };
             switch(areaType) {
-                case "Lethal":
+                case "lethal":
                     attributes.damage *= 3;
                     break;
-                case "Armored":
-                    attributes.armor *= 3;
+                case "armored":
+                    attributes.armor *= 2;
+                    attributes.health *= 2;
                     break;
-                case "Tanky":
-                    attributes.health *= 3;
-                    break;
-                case "Regenerating":
+                case "regenerating":
                     attributes.regeneration *= 5;
                     break;
-                case "Weak":
+                case "weak":
                     attributes.damage *= 0.5;
                     break;
-                case "Squishy":
+                case "squishy":
                     attributes.health *= 0.5;
                     break;
                 default:
@@ -202,7 +230,7 @@ class FarmMap extends Map {
                     break;
             }
 
-            let area = new Area(new Attributes(attributes), this.level);
+            let area = new Area(new Attributes(attributes), this.level, areaType);
 
             this.areas.push(area);
         }
@@ -262,6 +290,9 @@ class Character extends ObservableObject {
         this.recalculateAttributes();
         this.currentHealth = this.attributes.health;
     }
+    getLevelMultiplierAmount() {
+        return 0.1;
+    }
     recalculateAttributes() {
         this.recalculateAttributesBasedOnLevel();
         this.currentHealth = this.attributes.health;
@@ -274,7 +305,7 @@ class Character extends ObservableObject {
         this.attributes.add(this.baseAttributes);
 
         // Level attributes
-        let levelMultiplierAmount = 0.1;
+        let levelMultiplierAmount = this.getLevelMultiplierAmount();
         let levelMultiplier = Attributes.getMultiplier(levelMultiplierAmount);
         let levelAttributes = new Attributes();
         levelAttributes.add(this.baseAttributes);
@@ -303,10 +334,11 @@ class Character extends ObservableObject {
 }
 
 class Area extends Character {
-    constructor(attributes, level) {
+    constructor(attributes, level, type) {
         super(attributes);
 
         this.level = level;
+        this.type = type;
         this.recalculateAttributes();
 
         this.isComplete = false;
@@ -316,6 +348,9 @@ class Area extends Character {
         this.listeners.onUnlock = [];
         this.listeners.onStart = [];
         this.listeners.onComplete = [];
+    }
+    getLevelMultiplierAmount() {
+        return 0.3;
     }
     unlock() {
         this.isLocked = false;
@@ -392,6 +427,19 @@ class Player extends Character {
         }
 
         // Item attributes multipliers
+        let addMultiplicativeProperties = (property) => {
+            if(property.type == "attributePercent") {
+                this.attributes[property.attribute] *= 1 + property.value;
+            }
+        }
+
+        for(var index in this.equippedItems){
+            let item = this.equippedItems[index];
+            if(item !== null) {
+                item.implicitProperties.forEach(addMultiplicativeProperties);
+                item.properties.forEach(addMultiplicativeProperties);
+            }
+        }
 
         this.callListeners(this.listeners.onChange);
     }
@@ -510,8 +558,13 @@ class Item extends ObservableObject {
     }
     scaleToLevel() {
         let scaleProperty = (property) => {
-            property.min = property.baseMin * (0.9 + 0.1 * this.level);
-            property.max = property.baseMax * (0.9 + 0.1 * this.level);
+            if(property.type == "attributeFlat") {
+                property.min = property.baseMin * (0.9 + 0.1 * this.level);
+                property.max = property.baseMax * (0.9 + 0.1 * this.level);
+            } else if (property.type == "attributePercent") {
+                property.min = property.baseMin * (0.96 + 0.04 * this.level);
+                property.max = property.baseMax * (0.96 + 0.04 * this.level);
+            }
         };
         this.implicitProperties.forEach(scaleProperty);
         this.properties.forEach(scaleProperty);
@@ -532,7 +585,7 @@ class Item extends ObservableObject {
             [1, "bodyArmor"],
             [1, "legArmor"],
             [2, "footArmor"],
-            [5, "weapon"]
+            [4, "weapon"]
         ]);
 
         let implicitProperties = [];
@@ -540,7 +593,7 @@ class Item extends ObservableObject {
 
         let baseType = null;
 
-        let propertyCount = randomInt(1, 3);
+        let propertyCount = randomInt(1, 4);
 
         let propertiesWeighted = [];
 
@@ -573,10 +626,14 @@ class Item extends ObservableObject {
                 ]);
 
                 propertiesWeighted = [
-                    [5, PROPERTIES.DAMAGE],
-                    [5, PROPERTIES.SPEED],
-                    [2, PROPERTIES.HEALTH],
-                    [1, PROPERTIES.REGENERATION]
+                    [10, PROPERTIES.DAMAGE],
+                    [10, PROPERTIES.SPEED],
+                    [4, PROPERTIES.HEALTH],
+                    [2, PROPERTIES.REGENERATION],
+                    [5, PROPERTIES.PERCENT_DAMAGE],
+                    [5, PROPERTIES.PERCENT_SPEED],
+                    [2, PROPERTIES.PERCENT_HEALTH],
+                    [1, PROPERTIES.PERCENT_REGENERATION]
                 ];
                 break;
             case "headArmor":
@@ -593,10 +650,14 @@ class Item extends ObservableObject {
                 ]);
 
                 propertiesWeighted = [
-                    [5, PROPERTIES.ARMOR],
-                    [2, PROPERTIES.SPEED],
-                    [5, PROPERTIES.HEALTH],
-                    [2, PROPERTIES.REGENERATION]
+                    [10, PROPERTIES.ARMOR],
+                    [4, PROPERTIES.SPEED],
+                    [10, PROPERTIES.HEALTH],
+                    [4, PROPERTIES.REGENERATION],
+                    [5, PROPERTIES.PERCENT_ARMOR],
+                    [2, PROPERTIES.PERCENT_SPEED],
+                    [5, PROPERTIES.PERCENT_HEALTH],
+                    [2, PROPERTIES.PERCENT_REGENERATION]
                 ];
                 break;
             case "bodyArmor":
@@ -613,10 +674,14 @@ class Item extends ObservableObject {
                 ]);
 
                 propertiesWeighted = [
-                    [5, PROPERTIES.ARMOR],
-                    [2, PROPERTIES.SPEED],
-                    [5, PROPERTIES.HEALTH],
-                    [2, PROPERTIES.REGENERATION]
+                    [10, PROPERTIES.ARMOR],
+                    [4, PROPERTIES.SPEED],
+                    [10, PROPERTIES.HEALTH],
+                    [4, PROPERTIES.REGENERATION],
+                    [5, PROPERTIES.PERCENT_ARMOR],
+                    [2, PROPERTIES.PERCENT_SPEED],
+                    [5, PROPERTIES.PERCENT_HEALTH],
+                    [2, PROPERTIES.PERCENT_REGENERATION]
                 ];
                 break;
             case "legArmor":
@@ -638,10 +703,14 @@ class Item extends ObservableObject {
                 ]);
 
                 propertiesWeighted = [
-                    [5, PROPERTIES.ARMOR],
-                    [5, PROPERTIES.SPEED],
-                    [2, PROPERTIES.HEALTH],
-                    [2, PROPERTIES.REGENERATION]
+                    [10, PROPERTIES.ARMOR],
+                    [10, PROPERTIES.SPEED],
+                    [4, PROPERTIES.HEALTH],
+                    [4, PROPERTIES.REGENERATION],
+                    [5, PROPERTIES.PERCENT_ARMOR],
+                    [5, PROPERTIES.PERCENT_SPEED],
+                    [2, PROPERTIES.PERCENT_HEALTH],
+                    [2, PROPERTIES.PERCENT_REGENERATION]
                 ];
                 break;
             case "footArmor":
@@ -663,11 +732,16 @@ class Item extends ObservableObject {
                 ]);
 
                 propertiesWeighted = [
-                    [3, PROPERTIES.ARMOR],
-                    [5, PROPERTIES.SPEED],
-                    [2, PROPERTIES.HEALTH],
-                    [1, PROPERTIES.REGENERATION],
-                    [3, PROPERTIES.DAMAGE]
+                    [6, PROPERTIES.ARMOR],
+                    [10, PROPERTIES.SPEED],
+                    [4, PROPERTIES.HEALTH],
+                    [2, PROPERTIES.REGENERATION],
+                    [6, PROPERTIES.DAMAGE],
+                    [3, PROPERTIES.PERCENT_ARMOR],
+                    [5, PROPERTIES.PERCENT_SPEED],
+                    [2, PROPERTIES.PERCENT_HEALTH],
+                    [1, PROPERTIES.PERCENT_REGENERATION],
+                    [3, PROPERTIES.PERCENT_DAMAGE]
                 ];
                 break;            
         }

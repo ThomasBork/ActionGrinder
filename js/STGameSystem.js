@@ -207,6 +207,20 @@ class STGameObject {
             if(onVisible != undefined) {
                 onVisible(this);
             }
+
+            // Reverse iteration to test top-most elements first
+            for(var i = this.children.length - 1; i >= 0; i--) {
+                let child = this.children[i];
+                // If the child contains the click
+                if(child.containsPoint(globalX, globalY)) {
+                    // If the child handled the click
+                    if(child.handleSingleEvent(globalX, globalY, args, handlerName, onVisible, predicate)){
+                        return true;
+                    }
+                }
+            }
+
+            // No child handled the click event, handle this.
             let localCoordinates = this.getLocalCoordinates(globalX, globalY);
             let predicateTest = true;
             if(predicate != undefined){
@@ -217,21 +231,7 @@ class STGameObject {
                 args.forEach((element)=>{arg.push(element);});
                 this[handlerName].apply(this, arg);
                 return true;
-            } 
-            else {
-                // Reverse iteration to test top-most elements first
-                for(var i = this.children.length - 1; i >= 0; i--) {
-                    let child = this.children[i];
-                    // If the child contains the click
-                    if(child.containsPoint(globalX, globalY)) {
-                        // If the child handled the click
-                        if(child.handleSingleEvent(globalX, globalY, args, handlerName, onVisible, predicate)){
-                            return true;
-                        }
-                    }
-                }
-        
-                // No child handled the click event, return false.
+            } else {
                 return false;
             }
         }
@@ -256,7 +256,7 @@ class STGameObject {
             if(event.date != null) {
                 let now = new Date().getTime();
                 let diff = now - event.date.getTime();
-                return diff < 100;
+                return diff < 150;
             } else {
                 return false;
             }
@@ -355,8 +355,8 @@ class STCanvas extends STGameObject {
     }
     getGlobalCoordinates(localX, localY) {
         let relativeCoordinates = {
-            x: localX + this.x - this.viewportX,
-            y: localY + this.y - this.viewportY
+            x: localX + this.x + this.viewportX,
+            y: localY + this.y + this.viewportY
         };
         let canvas = this.getContainingCanvas();
         if(canvas !== null) {

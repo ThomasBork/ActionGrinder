@@ -71,11 +71,12 @@ class VGame extends STGame {
         };
         
         // Farm level container
-        let farmMapsContainer = new VZoomableCanvas({
+        let farmMapsContainer = new VCanvas({
             left: 0,
             top: 100,
             width: this.width,
-            height: 700
+            height: 700,
+            isZoomable: true
         });
         this.objects.farmMapsContainer = farmMapsContainer;
         this.addChild(farmMapsContainer);
@@ -163,6 +164,15 @@ class VGame extends STGame {
 
         // Stash
         this.objects.windows.stash = this.createSideWindow("Stash", false);
+        this.objects.windows.stash.canvas = new VCanvas({
+            left: 25,
+            top: 45,
+            width: this.objects.windows.stash.width - 25 * 2,
+            height: this.objects.windows.stash.height - 45 - 25,
+            isDraggableX: false,
+            isDraggableY: true
+        });
+        this.objects.windows.stash.addChild(this.objects.windows.stash.canvas);
 
         // Inventory
         let inventory = this.createSideWindow("Inventory", true);
@@ -391,13 +401,13 @@ class VGame extends STGame {
         // Create new areas
         for(var i = 0; i < areas.length; i++) {
             let area = new VArea({
+                area: areas[i],
                 left: (areaWidth + marginX) * i,
                 top: 0,
                 parentLevel: this,
                 width: areaWidth,
                 height: areaWidth
             });
-
             this.objects.areas.push(area);
             this.objects.areasContainer.addChild(area);
         }
@@ -447,9 +457,9 @@ class VGame extends STGame {
             if(itemEquipped) {
                 removeElement(this.objects.itemsInStash, item);
             } else {
-                item.left = 25 + (i % 5) * 90;
-                item.top = 45 + Math.floor(i / 5) * 90;
-                this.objects.windows.stash.addChild(item);
+                item.left = (i % 5) * 90;
+                item.top = Math.floor(i / 5) * 90;
+                this.objects.windows.stash.canvas.addChild(item);
             }
         }
     }
@@ -557,6 +567,14 @@ class VMap extends VClickableRectWithBar {
             this.unlock();
         }
 
+        this.addChild(new STImage({
+            left: 3,
+            top: 3,
+            width: this.width - 6,
+            height: this.height - 6,
+            path: "img/map_" + this.map.name + ".png"
+        }));
+
         this.map.listeners.onUnlock.push(()=>{
             this.isVisible = true;
             this.unlock();
@@ -632,6 +650,14 @@ class VArea extends VClickableRectWithBar {
         } else {
             this.unlock();
         }
+
+        this.addChild(new STImage({
+            left: 3,
+            top: 3,
+            width: this.width - 6,
+            height: this.height - 6,
+            path: "img/area_" + this.area.type + ".png"
+        }));
 
         this.area.listeners.onUnlock.push(()=>{
             this.isVisible = true;
@@ -871,7 +897,7 @@ class VItem extends STGameObject {
         this.hoverInfo.updateRelativeVariables();
     }
     onMouseMove(x, y) {
-        let globalPosition = this.getGlobalPosition(x, y);
+        let globalPosition = this.getGlobalCoordinates(x, y);
         this.refreshHoverInfoPosition(globalPosition.x, globalPosition.y);
         this.hoverInfo.show();
     }
@@ -926,6 +952,24 @@ class VItem extends STGameObject {
                     right: containerPadding,
                     top: top,
                     text: numberText,
+                    isRightToLeft: true,
+                    color: "black"
+                });
+    
+                hoverInfo.addChild(label);
+                hoverInfo.addChild(value);
+            } else if (property.type == "attributePercent") {
+                let label = new STText({
+                    left: containerPadding,
+                    top: top,
+                    text: prettyWord(property.attribute),
+                    color: "black"
+                });
+
+                let value = new STText({
+                    right: containerPadding,
+                    top: top,
+                    text: prettyNumber(property.value * 100) + "%",
                     isRightToLeft: true,
                     color: "black"
                 });
@@ -994,10 +1038,13 @@ class VItem extends STGameObject {
     }
 }
 
-class VZoomableCanvas extends STCanvas {
+class VCanvas extends STCanvas {
     constructor(options) {
         super(options);
         let defaults = {
+            isDraggableX: true,
+            isDraggableY: true,
+            isZoomable: false,
             isDragging: false,
             dragPointX: null,
             dragPointY: null
@@ -1006,33 +1053,55 @@ class VZoomableCanvas extends STCanvas {
         mergeObjects(this, settings);
     }
     onMouseDown(x, y) {
-        this.isDragging = true;
-        this.dragPointX = x;
-        this.dragPointY = y;
+        if(this.isDraggableX || this.isDraggableY) {
+            this.isDragging = true;
+            this.dragPointX = x;
+            this.dragPointY = y;
+        }
     }
     onMouseUp(x, y) {
         this.isDragging = false;
     }
     onMouseMove(x, y) {
         if(this.isDragging) {
-            this.viewportX -= this.dragPointX - x;
-            this.viewportY -= this.dragPointY - y;
-            this.dragPointX = x;
-            this.dragPointY = y;
+            if(this.isDraggableX){
+                this.viewportX -= this.dragPointX - x;
+                this.dragPointX = x;
+            }
+            if(this.isDraggableY){
+                this.viewportY -= this.dragPointY - y;
+                this.dragPointY = y;
+            }
         }
     }
     onScroll(x, y, speed) {
-        let newScaleX = this.scaleX - 0.01;
-        let newScaleY = this.scaleY - 0.01;
-        if(speed < 0) {
-            newScaleX = this.scaleX + 0.01;
-            newScaleY = this.scaleX + 0.01;
+        if(this.isZoomable){
+            let newScaleX = this.scaleX - 0.01;
+            let newScaleY = this.scaleY - 0.01;
+            if(speed < 0) {
+                newScaleX = this.scaleX + 0.01;
+                newScaleY = this.scaleX + 0.01;
+            }
+    
+            this.viewportX += this.width * (this.scaleX - newScaleX) * 0.5;
+            this.viewportY += this.height * (this.scaleY - newScaleY) * 0.5;
+    
+            this.scaleX = newScaleX;
+            this.scaleY = newScaleY;
         }
-
-        this.viewportX += this.width * (this.scaleX - newScaleX) * 0.5;
-        this.viewportY += this.height * (this.scaleY - newScaleY) * 0.5;
-
-        this.scaleX = newScaleX;
-        this.scaleY = newScaleY;
+        else if(this.isDraggableX) {
+            if(speed >= 0) {
+                this.viewportX -= 25;
+            } else {
+                this.viewportX += 25;
+            }
+        }
+        else if(this.isDraggableY) {
+            if(speed >= 0) {
+                this.viewportY -= 25;
+            } else {
+                this.viewportY += 25;
+            }
+        }
     }
 }
