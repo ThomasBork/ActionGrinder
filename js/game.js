@@ -1,66 +1,3 @@
-let PROPERTIES = {
-    DAMAGE: {
-        type: "attributeFlat",
-        attribute: "damage",
-        baseMin: 1,
-        baseMax: 8
-    },
-    SPEED: {
-        type: "attributeFlat",
-        attribute: "speed",
-        baseMin: 0.02,
-        baseMax: 0.1
-    },
-    ARMOR: {
-        type: "attributeFlat",
-        attribute: "armor",
-        baseMin: 1,
-        baseMax: 20
-    },
-    HEALTH: {
-        type: "attributeFlat",
-        attribute: "health",
-        baseMin: 10,
-        baseMax: 50
-    },
-    REGENERATION: {
-        type: "attributePercent",
-        attribute: "regeneration",
-        baseMin: 0.01,
-        baseMax: 0.05
-    },
-    PERCENT_DAMAGE: {
-        type: "attributePercent",
-        attribute: "damage",
-        baseMin: 0.01,
-        baseMax: 0.05
-    },
-    PERCENT_SPEED: {
-        type: "attributePercent",
-        attribute: "speed",
-        baseMin: 0.01,
-        baseMax: 0.05
-    },
-    PERCENT_ARMOR: {
-        type: "attributePercent",
-        attribute: "armor",
-        baseMin: 0.01,
-        baseMax: 0.05
-    },
-    PERCENT_HEALTH: {
-        type: "attributePercent",
-        attribute: "health",
-        baseMin: 0.01,
-        baseMax: 0.05
-    },
-    PERCENT_REGENERATION: {
-        type: "attributePercent",
-        attribute: "regeneration",
-        baseMin: 0.01,
-        baseMax: 0.05
-    }
-};
-
 class ObservableObject {
     constructor() {
         this.listeners = {
@@ -92,6 +29,8 @@ class Game extends ObservableObject {
         this.bossMaps = [];
     }
     initialize() {
+        Item.initializeItemSystem();
+
         this.player = new Player();
 
         let plainsMap = new FarmMap("Plains", 1);
@@ -289,6 +228,7 @@ class Character extends ObservableObject {
         this.attributes = null;
         this.recalculateAttributes();
         this.currentHealth = this.attributes.health;
+        this.attackCooldown = 0;
     }
     getLevelMultiplierAmount() {
         return 0.1;
@@ -314,8 +254,8 @@ class Character extends ObservableObject {
             this.attributes.add(levelAttributes);
         } 
     }
-    dealDamageTo(character, dTime) {
-        let damageDealt = this.attributes.damage * this.attributes.speed * dTime;
+    dealDamageTo(character) {
+        let damageDealt = this.attributes.damage;
         character.takeDamage(damageDealt);
     }
     takeDamage(damageDealt) {
@@ -441,6 +381,24 @@ class Player extends Character {
             }
         }
 
+        // Item attribute per attribute
+        let attributePerAttributeSet = new Attributes();
+        let addAttributePerAttributeProperties = (property) => {
+            if(property.type == "attributePerAttribute") {
+                attributePerAttributeSet[property.args[0]] += property.value * this.attributes[property.args[1]];
+            }
+        }
+
+        for(var index in this.equippedItems){
+            let item = this.equippedItems[index];
+            if(item !== null) {
+                item.implicitProperties.forEach(addAttributePerAttributeProperties);
+                item.properties.forEach(addAttributePerAttributeProperties);
+            }
+        }
+        this.attributes.add(attributePerAttributeSet);
+
+
         this.callListeners(this.listeners.onChange);
     }
     update(dTime) {
@@ -451,13 +409,26 @@ class Player extends Character {
         if(this.currentArea !== null) {
             this.currentArea.applyRegeneration(dTime);
 
-            this.dealDamageTo(this.currentArea, dTime);
-            this.currentArea.dealDamageTo(this, dTime);
+            // Deal damage
+            this.attackCooldown -= this.attributes.speed * dTime;
+            while(this.attackCooldown <= 0) {
+                this.attackCooldown += 1;
+                this.dealDamageTo(this.currentArea);
+            }
+
+            // Take damage
+            this.currentArea.attackCooldown -= this.currentArea.attributes.speed * dTime;
+            while(this.currentArea.attackCooldown <= 0) {
+                this.currentArea.attackCooldown += 1;
+                this.currentArea.dealDamageTo(this);
+            }
 
             if(this.currentHealth <= 0) {
+                this.currentHealth = 0;
                 this.stopFighting();
             } 
             else if (this.currentArea.currentHealth <= 0) {
+                this.currentArea.currentHealth = 0;
                 this.currentArea.complete();
             }
         }
@@ -482,13 +453,16 @@ class Player extends Character {
     }
     leaveMap() {
         this.currentMap = null;
+        this.attackCooldown = 0;
     }
     leaveArea() {
         this.currentArea = null;
+        this.attackCooldown = 0;
     }
     stopFighting() {
         this.currentArea = null;
         this.currentMap = null;
+        this.attackCooldown = 0;
         this.callListeners(this.listeners.onFightingStop);
     }
     gainExperience(amount) {
@@ -533,6 +507,43 @@ class Player extends Character {
     }
 }
 
+class ItemProperty {
+    constructor(options) {
+        let defaults = {
+            type: "attributeFlat",
+            attribute: "armor",
+            baseMin: null,
+            baseMax: null,
+            min: null,
+            max: null,
+            value: null,
+            isSpecial: false,
+            args: []
+        };
+        let settings = extend(defaults, options);
+        mergeObjects(this, settings);
+
+        if(this.baseMin === null) {
+            this.baseMin = this.baseMax;
+        } else if (this.baseMax === null) {
+            this.baseMax = this.baseMin;
+        }
+    }
+}
+
+class ItemType {
+    constructor(options) {
+        let defaults = {
+            type: "weapon",
+            name: "Unknown",
+            properties: [],
+            tags: []
+        };
+        let settings = extend(defaults, options);
+        mergeObjects(this, settings);
+    }
+}
+
 class Item extends ObservableObject {
     constructor(options) {
         super();
@@ -542,7 +553,8 @@ class Item extends ObservableObject {
             level: 0,
             rarity: 0,
             implicitProperties: [],
-            properties: []
+            properties: [],
+            tags: []
         }
         let settings = extend(defaults, options);
         mergeObjects(this, settings);
@@ -553,8 +565,14 @@ class Item extends ObservableObject {
         this.initializeProperties();
     }
     initializeProperties() {
-        this.implicitProperties.forEach((property) => {property.min = property.baseMin;});
-        this.properties.forEach((property) => {property.min = property.baseMin;});
+        this.implicitProperties.forEach((property) => {
+            property.min = property.baseMin;
+            property.max = property.baseMax;
+        });
+        this.properties.forEach((property) => {
+            property.min = property.baseMin;
+            property.max = property.baseMax;
+        });
     }
     scaleToLevel() {
         let scaleProperty = (property) => {
@@ -579,8 +597,400 @@ class Item extends ObservableObject {
         this.implicitProperties.forEach(rollProperty);
         this.properties.forEach(rollProperty);
     }
+    static initializeItemSystem() {
+        Item.properties = {
+            damage: {
+                type: "attributeFlat",
+                attribute: "damage",
+                baseMin: 1,
+                baseMax: 8
+            },
+            speed: {
+                type: "attributeFlat",
+                attribute: "speed",
+                baseMin: 0.02,
+                baseMax: 0.1
+            },
+            armor: {
+                type: "attributeFlat",
+                attribute: "armor",
+                baseMin: 1,
+                baseMax: 20
+            },
+            health: {
+                type: "attributeFlat",
+                attribute: "health",
+                baseMin: 10,
+                baseMax: 50
+            },
+            regeneration: {
+                type: "attributeFlat",
+                attribute: "regeneration",
+                baseMin: 0.1,
+                baseMax: 0.5
+            },
+            percent_damage: {
+                type: "attributePercent",
+                attribute: "damage",
+                baseMin: 0.01,
+                baseMax: 0.05
+            },
+            percent_speed: {
+                type: "attributePercent",
+                attribute: "speed",
+                baseMin: 0.01,
+                baseMax: 0.05
+            },
+            percent_armor: {
+                type: "attributePercent",
+                attribute: "armor",
+                baseMin: 0.01,
+                baseMax: 0.05
+            },
+            percent_health: {
+                type: "attributePercent",
+                attribute: "health",
+                baseMin: 0.01,
+                baseMax: 0.05
+            },
+            percent_regeneration: {
+                type: "attributePercent",
+                attribute: "regeneration",
+                baseMin: 0.01,
+                baseMax: 0.05
+            }
+        };
+
+        // Convert all property objects to instances of ItemProperty
+        for(var index in Item.properties){
+            Item.properties[index] = new ItemProperty(Item.properties[index]);
+        }
+
+        Item.itemTypes = {
+            weapon: [
+                {
+                    name: "Axe",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "damage",
+                        baseMin: 12
+                    }]
+                },
+                {
+                    name: "Sword",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "damage",
+                        baseMin: 7
+                    },{
+                        type: "attributeFlat",
+                        attribute: "speed",
+                        baseMin: 0.1
+                    }]
+                },
+                {
+                    name: "Spiked Shield",
+                    tags: ["shield"],
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "damage",
+                        baseMin: 2
+                    },{
+                        type: "attributeFlat",
+                        attribute: "armor",
+                        baseMin: 25
+                    }]
+                },
+                {
+                    name: "Tower Shield",
+                    tags: ["shield"],
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "armor",
+                        baseMin: 40
+                    }]
+                }
+            ],
+            headArmor: [
+                {
+                    name: "Magic Hat",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "speed",
+                        baseMin: 0.2
+                    }]
+                },
+                {
+                    name: "Leather Cap",
+                    properties: [
+                        {
+                            type: "attributeFlat",
+                            attribute: "armor",
+                            baseMin: 10
+                        },{
+                            type: "attributeFlat",
+                            attribute: "speed",
+                            baseMin: 0.1
+                        }
+                    ]
+                },
+                {
+                    name: "Crown",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "damage",
+                        baseMin: 5
+                    }]
+                },
+                {
+                    name: "Helm",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "armor",
+                        baseMin: 20
+                    }]
+                }
+            ],
+            bodyArmor: [
+                {
+                    name: "Plate Mail",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "armor",
+                        baseMin: 25
+                    }]
+                }
+            ],
+            legArmor: [
+                {
+                    name: "Leather Pants",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "armor",
+                        baseMin: 5
+                    }, {
+                        type: "attributeFlat",
+                        attribute: "speed",
+                        baseMin: 0.1
+                    }]
+                }
+            ],
+            footArmor: [
+                {
+                    name: "Leather Boot",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "armor",
+                        baseMin: 5
+                    }, {
+                        type: "attributeFlat",
+                        attribute: "speed",
+                        baseMin: 0.1
+                    }]
+                }
+            ]
+        };
+
+        Item.uniqueItemTypes = {
+            weapon: [
+                {
+                    name: "Golden Sword",
+                    properties: [{
+                        type: "attributePerAttribute",
+                        args: ["damage", "speed"],
+                        baseMin: 10
+                    }]
+                }
+            ],
+            headArmor: [
+                {
+                    name: "Golden Hat",
+                    properties: [{
+                        type: "attributePerAttribute",
+                        args: ["damage", "health"],
+                        baseMin: 0.1
+                    }]
+                }
+            ],
+            bodyArmor: [
+                {
+                    name: "Golden Mail",
+                    properties: [{
+                        type: "attributePerAttribute",
+                        args: ["damage", "armor"],
+                        baseMin: 0.2
+                    }]
+                }
+            ],
+            legArmor: [
+                {
+                    name: "Golden Pants",
+                    properties: [{
+                        type: "attributePerAttribute",
+                        args: ["damage", "regeneration"],
+                        baseMin: 4
+                    }]
+                }
+            ],
+            footArmor: [
+                {
+                    name: "Golden Boot",
+                    properties: [{
+                        type: "attributePerAttribute",
+                        args: ["damage", "speed"],
+                        baseMin: 10
+                    }]
+                }
+            ]
+        };
+
+        // Convert all item objects to instances of ItemType
+        for(var index in Item.itemTypes){
+            var typeArray = Item.itemTypes[index];
+            for(var iType = 0; iType < typeArray.length; iType++) {
+                var type = typeArray[iType];
+                for(var iProperty = 0; iProperty < type.properties.length; iProperty++) {
+                    type.properties[iProperty] = new ItemProperty(type.properties[iProperty]);
+                }
+                typeArray[iType] = new ItemType(typeArray[iType]);
+            }
+        }
+        for(var index in Item.uniqueItemTypes){
+            var typeArray = Item.uniqueItemTypes[index];
+            for(var iType = 0; iType < typeArray.length; iType++) {
+                var type = typeArray[iType];
+                for(var iProperty = 0; iProperty < type.properties.length; iProperty++) {
+                    type.properties[iProperty] = new ItemProperty(type.properties[iProperty]);
+                }
+                typeArray[iType] = new ItemType(typeArray[iType]);
+            }
+        }
+
+        Item.weightedItemProperties = {
+            weapon: [
+                [10, Item.properties.damage],
+                [10, Item.properties.speed],
+                [4, Item.properties.health],
+                [2, Item.properties.regeneration],
+                [5, Item.properties.percent_damage],
+                [5, Item.properties.percent_speed],
+                [2, Item.properties.percent_health],
+                [1, Item.properties.percent_regeneration]
+            ],
+            headArmor: [
+                [10, Item.properties.armor],
+                [4, Item.properties.speed],
+                [10, Item.properties.health],
+                [4, Item.properties.regeneration],
+                [5, Item.properties.percent_armor],
+                [2, Item.properties.percent_speed],
+                [5, Item.properties.percent_health],
+                [2, Item.properties.percent_regeneration]
+            ],
+            bodyArmor: [
+                [10, Item.properties.armor],
+                [4, Item.properties.speed],
+                [10, Item.properties.health],
+                [4, Item.properties.regeneration],
+                [5, Item.properties.percent_armor],
+                [2, Item.properties.percent_speed],
+                [5, Item.properties.percent_health],
+                [2, Item.properties.percent_regeneration]
+            ],
+            legArmor: [
+                [10, Item.properties.armor],
+                [10, Item.properties.speed],
+                [4, Item.properties.health],
+                [4, Item.properties.regeneration],
+                [5, Item.properties.percent_armor],
+                [5, Item.properties.percent_speed],
+                [2, Item.properties.percent_health],
+                [2, Item.properties.percent_regeneration]
+            ],
+            footArmor: [
+                [6, Item.properties.armor],
+                [10, Item.properties.speed],
+                [4, Item.properties.health],
+                [2, Item.properties.regeneration],
+                [6, Item.properties.damage],
+                [3, Item.properties.percent_armor],
+                [5, Item.properties.percent_speed],
+                [2, Item.properties.percent_health],
+                [1, Item.properties.percent_regeneration],
+                [3, Item.properties.percent_damage]
+            ]
+        }
+    }
+    static getWeightedProperties(itemType, itemSlot) {
+        let propertyDictionary = {
+            armor: 2,
+            speed: 2,
+            health: 2,
+            regeneration: 2,
+            damage: 2,
+            percent_armor: 1,
+            percent_speed: 1,
+            percent_health: 1,
+            percent_regeneration: 1,
+            percent_damage: 1
+        };
+
+        switch(itemSlot) {
+            case "weapon":
+                if(itemType.tags.includes("shield")) {
+                    propertyDictionary.armor = 4;
+                    propertyDictionary.percent_armor = 4;
+                    propertyDictionary.damage = 0;
+                    propertyDictionary.percent_damage = 0;
+                } else {
+                    propertyDictionary.armor = 0;
+                    propertyDictionary.percent_armor = 0;
+                    propertyDictionary.damage = 4;
+                    propertyDictionary.percent_damage = 4;
+                    propertyDictionary.speed = 4;
+                    propertyDictionary.percent_speed = 4;
+                }
+                break;
+            case "headArmor": 
+                propertyDictionary.armor = 4;
+                propertyDictionary.percent_armor = 4;
+                propertyDictionary.damage = 0;
+                propertyDictionary.percent_damage = 0;
+                break;
+            case "bodyArmor": 
+                propertyDictionary.armor = 4;
+                propertyDictionary.percent_armor = 4;
+                propertyDictionary.regeneration = 4;
+                propertyDictionary.percent_regeneration = 4;
+                propertyDictionary.damage = 0;
+                propertyDictionary.percent_damage = 0;
+                break;
+            case "legArmor": 
+                propertyDictionary.armor = 4;
+                propertyDictionary.percent_armor = 4;
+                propertyDictionary.speed = 4;
+                propertyDictionary.percent_speed = 4;
+                propertyDictionary.damage = 0;
+                propertyDictionary.percent_damage = 0;
+                break;
+            case "footArmor": 
+                propertyDictionary.speed = 4;
+                propertyDictionary.percent_speed = 4;
+                break;
+        }
+
+        // Build and return weighted properties
+        let weightedProperties = [];
+        for(var index in propertyDictionary) {
+            weightedProperties.push([
+                propertyDictionary[index],  // Weight
+                Item.properties[index]      // Property
+            ]);
+        }
+        return weightedProperties;
+    }
     static randomItem (level) {
-        let itemType = randomElementWeighted([
+        let itemSlot = randomElementWeighted([
             [1, "headArmor"],
             [1, "bodyArmor"],
             [1, "legArmor"],
@@ -590,164 +1000,38 @@ class Item extends ObservableObject {
 
         let implicitProperties = [];
         let properties = [];
+        let propertyCount = 0;
+        let itemArray = null;
 
-        let baseType = null;
-
-        let propertyCount = randomInt(1, 4);
-
-        let propertiesWeighted = [];
-
-        switch(itemType) {
-            case "weapon":
-                baseType = randomElement([
-                    {
-                        name: "Axe",
-                        properties: [{
-                            type: "attributeFlat",
-                            attribute: "damage",
-                            baseMin: 12,
-                            baseMax: 12
-                        }]
-                    },
-                    {
-                        name: "Sword",
-                        properties: [{
-                            type: "attributeFlat",
-                            attribute: "damage",
-                            baseMin: 7,
-                            baseMax: 7
-                        },{
-                            type: "attributeFlat",
-                            attribute: "speed",
-                            baseMin: 0.1,
-                            baseMax: 0.1
-                        }]
-                    }
-                ]);
-
-                propertiesWeighted = [
-                    [10, PROPERTIES.DAMAGE],
-                    [10, PROPERTIES.SPEED],
-                    [4, PROPERTIES.HEALTH],
-                    [2, PROPERTIES.REGENERATION],
-                    [5, PROPERTIES.PERCENT_DAMAGE],
-                    [5, PROPERTIES.PERCENT_SPEED],
-                    [2, PROPERTIES.PERCENT_HEALTH],
-                    [1, PROPERTIES.PERCENT_REGENERATION]
-                ];
-                break;
-            case "headArmor":
-                baseType = randomElement([
-                    {
-                        name: "Magic Hat",
-                        properties: [{
-                            type: "attributeFlat",
-                            attribute: "speed",
-                            baseMin: 0.2,
-                            baseMax: 0.2
-                        }]
-                    }
-                ]);
-
-                propertiesWeighted = [
-                    [10, PROPERTIES.ARMOR],
-                    [4, PROPERTIES.SPEED],
-                    [10, PROPERTIES.HEALTH],
-                    [4, PROPERTIES.REGENERATION],
-                    [5, PROPERTIES.PERCENT_ARMOR],
-                    [2, PROPERTIES.PERCENT_SPEED],
-                    [5, PROPERTIES.PERCENT_HEALTH],
-                    [2, PROPERTIES.PERCENT_REGENERATION]
-                ];
-                break;
-            case "bodyArmor":
-                baseType = randomElement([
-                    {
-                        name: "Plate Mail",
-                        properties: [{
-                            type: "attributeFlat",
-                            attribute: "armor",
-                            baseMin: 25,
-                            baseMax: 25
-                        }]
-                    }
-                ]);
-
-                propertiesWeighted = [
-                    [10, PROPERTIES.ARMOR],
-                    [4, PROPERTIES.SPEED],
-                    [10, PROPERTIES.HEALTH],
-                    [4, PROPERTIES.REGENERATION],
-                    [5, PROPERTIES.PERCENT_ARMOR],
-                    [2, PROPERTIES.PERCENT_SPEED],
-                    [5, PROPERTIES.PERCENT_HEALTH],
-                    [2, PROPERTIES.PERCENT_REGENERATION]
-                ];
-                break;
-            case "legArmor":
-                baseType = randomElement([
-                    {
-                        name: "Leather Pants",
-                        properties: [{
-                            type: "attributeFlat",
-                            attribute: "armor",
-                            baseMin: 5,
-                            baseMax: 5
-                        }, {
-                            type: "attributeFlat",
-                            attribute: "speed",
-                            baseMin: 0.1,
-                            baseMax: 0.1
-                        }]
-                    }
-                ]);
-
-                propertiesWeighted = [
-                    [10, PROPERTIES.ARMOR],
-                    [10, PROPERTIES.SPEED],
-                    [4, PROPERTIES.HEALTH],
-                    [4, PROPERTIES.REGENERATION],
-                    [5, PROPERTIES.PERCENT_ARMOR],
-                    [5, PROPERTIES.PERCENT_SPEED],
-                    [2, PROPERTIES.PERCENT_HEALTH],
-                    [2, PROPERTIES.PERCENT_REGENERATION]
-                ];
-                break;
-            case "footArmor":
-                baseType = randomElement([
-                    {
-                        name: "Leather Boot",
-                        properties: [{
-                            type: "attributeFlat",
-                            attribute: "armor",
-                            baseMin: 5,
-                            baseMax: 5
-                        }, {
-                            type: "attributeFlat",
-                            attribute: "speed",
-                            baseMin: 0.1,
-                            baseMax: 0.1
-                        }]
-                    }
-                ]);
-
-                propertiesWeighted = [
-                    [6, PROPERTIES.ARMOR],
-                    [10, PROPERTIES.SPEED],
-                    [4, PROPERTIES.HEALTH],
-                    [2, PROPERTIES.REGENERATION],
-                    [6, PROPERTIES.DAMAGE],
-                    [3, PROPERTIES.PERCENT_ARMOR],
-                    [5, PROPERTIES.PERCENT_SPEED],
-                    [2, PROPERTIES.PERCENT_HEALTH],
-                    [1, PROPERTIES.PERCENT_REGENERATION],
-                    [3, PROPERTIES.PERCENT_DAMAGE]
-                ];
-                break;            
+        let propertyCompareFunction = (p1, p2) => {
+            if(p1.attribute == p2.attribute) {
+                if(p1.type > p2.type){
+                    return 1;
+                } else {
+                    return -1;
+                }
+            } else {
+                if(p1.attribute > p2.attribute){
+                    return 1;
+                } else {
+                    return -1;
+                }
+            }
         }
 
-        for(var i = 0; i<baseType.properties.length; i++) {
-            let property = baseType.properties[i];
+        let isUnique = Math.random() < 0.02;
+        if(isUnique) {
+            itemArray = Item.uniqueItemTypes;
+        } else {
+            itemArray = Item.itemTypes;
+            propertyCount = randomInt(1, 4);
+        }
+    
+        let itemType = randomElement(itemArray[itemSlot]);
+        let propertiesWeighted = copyArray(Item.getWeightedProperties(itemType, itemSlot));
+
+        for(var i = 0; i<itemType.properties.length; i++) {
+            let property = itemType.properties[i];
             let propertyCopy = copyObject(property);
             implicitProperties.push(propertyCopy);
         }
@@ -759,13 +1043,17 @@ class Item extends ObservableObject {
             properties.push(propertyCopy);
         }
 
+        implicitProperties.sort(propertyCompareFunction);
+        properties.sort(propertyCompareFunction);
+
         let item = new Item({
             implicitProperties: implicitProperties,
             properties: properties,
-            type: itemType,
-            name: baseType.name,
-            rarity: propertyCount,
-            level: level
+            type: itemSlot,
+            name: itemType.name,
+            rarity: propertyCount == 0 ? 5 : propertyCount,
+            level: level,
+            tags: copyArray(itemType.tags)
         });
 
         item.scaleToLevel();

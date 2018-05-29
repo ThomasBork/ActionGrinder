@@ -25,8 +25,19 @@ class STGameObject {
         };
 
         let settings = extend(defaults, options);
-
         mergeObjects(this, settings);
+
+        if(STGameObject.nextId === undefined) {
+            STGameObject.nextId = 0;
+        }
+        this.id = STGameObject.nextId;
+        STGameObject.nextId++;
+
+        // Set relative z
+        this.relativeZ = this.z;
+        if(this.relativeZ == 0) {
+            this.relativeZ = 0.0001;
+        }
 
         // Update relative position
         if(this.isPositionRelativeToParent) {
@@ -88,6 +99,9 @@ class STGameObject {
                 this.x -= this.parent.x;
                 this.y -= this.parent.y;
             }
+
+            // Handle relative z
+            this.z = this.parent.z + this.relativeZ;
         }
 
         // Update children
@@ -128,7 +142,7 @@ class STGameObject {
         if(this.onUpdate !== undefined) {
             this.onUpdate(dTime);
         }
-        this.updateChildren(dTime);
+        //this.updateChildren(dTime);
     }
     updateChildren(dTime) {
         for(var index in this.children) {
@@ -327,6 +341,22 @@ class STCanvas extends STGameObject {
         this.viewportY = 0;
         this.scaleX = 1;
         this.scaleY = 1;
+        this.descendants = [];
+    }
+    addDescendant(object) {
+        this.descendants.push(object);
+        if(!(object instanceof STCanvas)){
+            object.setContext(this.context);
+        }
+
+        // Sort children from highest z value to lowest
+        this.descendants.sort(STGameObject.compareZBackToFront);
+    }
+    removeDescendant(object) {
+        this.descendants = this.descendants.filter(function(e) { return e !== object; });
+        if(object.parent == this) {
+            object.parent = null;
+        }
     }
     draw() {
         // Reset the transform
@@ -348,6 +378,13 @@ class STCanvas extends STGameObject {
         if(this.parent !== null) {
             this.parent.context.drawImage(this.canvas, this.x, this.y, this.width, this.height);
         }
+    }
+    drawDescendants() {
+        for(var i = 0; i<this.descendants.length; i++) {
+            if(this.descendants[i].isVisible){
+                this.descendants[i].draw();
+            }
+        } 
     }
     containsGlobalPoint(x, y) {
         return ( this.canvas.offsetLeft <= x && x < this.canvas.offsetLeft + this.canvas.offsetWidth ) &&

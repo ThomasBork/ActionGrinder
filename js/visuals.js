@@ -191,7 +191,7 @@ class VGame extends STGame {
             left: bodyBackground.width / 2 - 90,
             top: -80,
             width: 180,
-            height: 120
+            height: 240
         });
         bodyBackground.addChild(headArmor);
         this.objects.inventory.headArmor = headArmor;
@@ -353,9 +353,7 @@ class VGame extends STGame {
             if(playerSlot === null) {
                 inventorySlot.hide();
             } else {
-                let imagePath = VItem.getImagePath(playerSlot);
-                inventorySlot.image.setPath(imagePath);
-                inventorySlot.setHoverInfo(playerSlot);
+                inventorySlot.setItem(playerSlot);
                 inventorySlot.show();
             }
         }
@@ -572,7 +570,7 @@ class VMap extends VClickableRectWithBar {
             top: 3,
             width: this.width - 6,
             height: this.height - 6,
-            path: "img/map_" + this.map.name + ".png"
+            path: "img/map_" + this.map.name.toLowerCase() + ".png"
         }));
 
         this.map.listeners.onUnlock.push(()=>{
@@ -610,6 +608,10 @@ class VMap extends VClickableRectWithBar {
             vGame.objects.areasContainer.addChild(vArea);
 
             area.listeners.onChange.push(()=>{
+                this.refreshHealthBar();
+            });
+
+            area.listeners.onComplete.push(() => {
                 this.refreshHealthBar();
             });
         }
@@ -666,9 +668,19 @@ class VArea extends VClickableRectWithBar {
         this.area.listeners.onStart.push(()=>{
             this.bar.show();
         });
-        this.area.listeners.onChange.push(() => {this.refreshHealthBar();});
+        this.area.listeners.onChange.push(() => {
+            this.refreshHealthBar();
+        });
         this.area.listeners.onComplete.push(()=>{
             this.bar.hide();
+            this.addChild(new STImage({
+                path: "img/areaClear.png",
+                left: 0,
+                top: 0,
+                width: 1,
+                height: 1,
+                isSizeRelativeToParent: true
+            }));
         });
     }
     onClick(x, y) {
@@ -773,7 +785,8 @@ class VInventoryItem extends STGameObject {
             hoverInfo: null,
             item: null,
             image: null,
-            isFlippedHorizontally: false
+            isFlippedHorizontally: false,
+            currentYOffset: 0
         }
         let settings = extend(defaults, options);
         mergeObjects(this, settings);
@@ -788,6 +801,16 @@ class VInventoryItem extends STGameObject {
             isSizeRelativeToParent: true
         });
         this.addChild(this.image);
+    }
+    setItem(item) {
+        let imagePath = VItem.getImagePath(item);
+        this.image.setPath(imagePath);
+        this.setHoverInfo(item);
+        this.top -= this.currentYOffset;
+        let newYOffset = VInventoryItem.getRelativeImageYOffset(item);
+        this.currentYOffset = this.height * newYOffset;
+        this.top += this.currentYOffset;
+        this.updateRelativeVariables();
     }
     setHoverInfo(item) {
         if(this.item !== item) {
@@ -813,6 +836,13 @@ class VInventoryItem extends STGameObject {
     onMouseLeave(){
         this.hoverInfo.hide();
     }
+    static getRelativeImageYOffset(item) {
+        switch(item.name) {
+            case "Spiked Shield": 
+            case "Tower Shield": return 0.3;
+            default: return 0;
+        }
+    }
 }
 
 class VItem extends STGameObject {
@@ -833,8 +863,10 @@ class VItem extends STGameObject {
 
         this.imagePath = VItem.getImagePath(this.item);
 
+        let itemContainerPath = "img/item_" + this.item.rarity + ".png";
+
         this.image = new STImage({
-            path: "img/item.png",
+            path: itemContainerPath,
             left: 0,
             top: 0,
             width: 1,
@@ -843,30 +875,28 @@ class VItem extends STGameObject {
             customOnClick: (x, y) => {
                 let slot = this.item.type;
                 if(slot == "weapon" || slot == "footArmor") {
-                    slot += randomInt(1, 2);
+                    // Equip available slot or at random
+                    if(game.player.equippedItems[slot + "1"] == null) {
+                        slot += 1;
+                    } else if(game.player.equippedItems[slot + "2"] == null) {
+                        slot += 2;
+                    } else {
+                        slot += randomInt(1, 2);
+                    }
                 }
                 game.player.equipItem(this.item, slot);
             }
         });
         this.addChild(this.image);
 
-        let width = 1;
-        let height = 1;
-        switch(this.item.type) {
-            case "legArmor":
-                height = 0.8;
-                break;
-            case "weapon":
-                width = 0.33;
-                break;
-            default:
-                break;
-        }
+        let imageDimensions = VItem.getRelativeImageDimensions(this.item);
+        let width = imageDimensions.width;
+        let height = imageDimensions.height;
 
         this.image.addChild(new STImage({
             path: this.imagePath,
-            left: 20 + 60 * (1 - width) / 2,
-            top: 20 + 60 * (1 - height) / 2,
+            left: 10 + 60 * (1 - width) / 2,
+            top: 10 + 60 * (1 - height) / 2,
             width: 0.70 * width,
             height: 0.70 * height,
             isSizeRelativeToParent: true  
@@ -906,7 +936,7 @@ class VItem extends STGameObject {
     }
     static buildHoverInfo(item) {
         let containerPadding = 10;
-        let width = 200;
+        let width = 280;
         let nameSize = 18;
         let nameMargin = 20;
         let marginAfterImplicit = 10;
@@ -976,6 +1006,24 @@ class VItem extends STGameObject {
     
                 hoverInfo.addChild(label);
                 hoverInfo.addChild(value);
+            } else if(property.type == "attributePerAttribute") {
+                let label = new STText({
+                    left: containerPadding,
+                    top: top,
+                    text: prettyWord(property.args[0]) + " per " + prettyWord(property.args[1]),
+                    color: "black"
+                });
+
+                let value = new STText({
+                    right: containerPadding,
+                    top: top,
+                    text: prettyNumber(property.value, 2),
+                    isRightToLeft: true,
+                    color: "black"
+                });
+    
+                hoverInfo.addChild(label);
+                hoverInfo.addChild(value);
             }
         };
 
@@ -1035,6 +1083,21 @@ class VItem extends STGameObject {
     }
     static getImagePath(item) {
         return "img/" + item.type + "_" + item.name.replace(" ", "") + ".png";
+    }
+    static getRelativeImageDimensions(item) {
+        let width = 1;
+        let height = 1;
+        switch(item.type) {
+            case "legArmor":
+                height = 0.8;
+                break;
+            case "weapon":
+                width = 0.33;
+                break;
+            default:
+                break;
+        }
+        return {width: width, height: height};
     }
 }
 

@@ -110,3 +110,15 @@ function copyObject(obj) {
     }
     return newObj;
 }
+
+function deepCopyObject(obj) {
+    let newObj ={};
+    for(var index in obj) {
+        if(typeof newObj[index] === 'object') {
+            newObj[index] = deepCopyObject(obj[index]);
+        } else {
+            newObj[index] = obj[index];
+        }
+    }
+    return newObj;
+}
