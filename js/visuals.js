@@ -59,7 +59,6 @@ class VGame extends STGame {
                 weapon2: null
             },
             windows: {
-                playerStats: null,
                 inventory: null,
                 stash: null
             },
@@ -128,39 +127,6 @@ class VGame extends STGame {
         this.addChild(this.objects.playerExperienceBar);
 
         // Windows
-        // Player stats
-        let playerStats = this.createSideWindow("Player", true);
-        this.objects.windows.playerStats = playerStats;
-
-        let addLabelWithValueReturnValue = (labelText, valueText, top, parent) => {
-            let label = new STText({
-                left: 20,
-                top: top,
-                text: labelText,
-                color: "black"
-            });
-
-            let value = new STText({
-                right: 20,
-                top: top,
-                text: valueText,
-                isRightToLeft: true,
-                color: "black"
-            });
-
-            parent.addChild(label);
-            parent.addChild(value);
-
-            return value;
-        };
-
-        this.objects.playerStatsLabels.level = addLabelWithValueReturnValue("Level: ", "0", 50, playerStats);
-        this.objects.playerStatsLabels.health = addLabelWithValueReturnValue("Health: ", "0", 80, playerStats);
-        this.objects.playerStatsLabels.damage = addLabelWithValueReturnValue("Damage: ", "0", 110, playerStats);
-        this.objects.playerStatsLabels.speed = addLabelWithValueReturnValue("Speed: ", "0", 140, playerStats);
-        this.objects.playerStatsLabels.dps = addLabelWithValueReturnValue("Damage per second: ", "0", 170, playerStats);
-        this.objects.playerStatsLabels.armor = addLabelWithValueReturnValue("Armor: ", "0", 200, playerStats);
-        this.objects.playerStatsLabels.regeneration = addLabelWithValueReturnValue("Regeneration: ", "0", 230, playerStats);
 
         // Stash
         this.objects.windows.stash = this.createSideWindow("Stash", false);
@@ -179,86 +145,137 @@ class VGame extends STGame {
         this.objects.windows.inventory = inventory;
 
         let bodyBackground = new STImage({
-            left: 50,
-            top: 100,
-            width: 400,
-            height: 600,
+            left: 100,
+            top: 70,
+            width: 300,
+            height: 450,
             path: "img/bodyBackground.png"
         });
         inventory.addChild(bodyBackground);
 
         let headArmor = new VInventoryItem({
-            left: bodyBackground.width / 2 - 90,
-            top: -80,
-            width: 180,
-            height: 240
+            left: bodyBackground.width / 2 - 68,
+            top: -60,
+            width: 136,
+            height: 180,
+            itemSlot: "headArmor"
         });
         bodyBackground.addChild(headArmor);
         this.objects.inventory.headArmor = headArmor;
 
         let weapon1 = new VInventoryItem({
-            left: -25,
-            top: -25,
-            width: 100,
-            height: 300
+            left: -20,
+            top: -20,
+            width: 75,
+            height: 225,
+            itemSlot: "weapon1"
         });
         bodyBackground.addChild(weapon1);
         this.objects.inventory.weapon1 = weapon1;
 
         let weapon2 = new VInventoryItem({
-            right: -18,
-            top: -25,
-            width: 100,
-            height: 300,
+            right: -15,
+            top: -20,
+            width: 75,
+            height: 225,
             isFlippedHorizontally: true,
+            itemSlot: "weapon2"
         });
         bodyBackground.addChild(weapon2);
         this.objects.inventory.weapon2 = weapon2;
 
         let bodyArmor = new VInventoryItem({
-            left: bodyBackground.width / 2 - 100,
-            top: 160,
-            width: 200,
-            height: 200
+            left: bodyBackground.width / 2 - 75,
+            top: 120,
+            width: 150,
+            height: 150,
+            itemSlot: "bodyArmor"
         });
         bodyBackground.addChild(bodyArmor);
         this.objects.inventory.bodyArmor = bodyArmor;
 
         let legArmor = new VInventoryItem({
-            left: bodyBackground.width / 2 - 120,
-            top: 360,
-            width: 240,
-            height: 180
+            left: bodyBackground.width / 2 - 90,
+            top: 270,
+            width: 180,
+            height: 120,
+            itemSlot: "legArmor"
         });
         bodyBackground.addChild(legArmor);
         this.objects.inventory.legArmor = legArmor;
 
         let footArmor1 = new VInventoryItem({
-            left: 30,
-            bottom: -25,
-            width: 100,
-            height: 100
+            left: 16,
+            bottom: -16,
+            width: 75,
+            height: 75,
+            itemSlot: "footArmor1"
         });
         bodyBackground.addChild(footArmor1);
         this.objects.inventory.footArmor1 = footArmor1;
 
         let footArmor2 = new VInventoryItem({
-            right: 30,
-            bottom: -25,
-            width: 100,
-            height: 100,
-            isFlippedHorizontally: true
+            right: 24,
+            bottom: -16,
+            width: 75,
+            height: 75,
+            isFlippedHorizontally: true,
+            itemSlot: "footArmor2"
         });
         bodyBackground.addChild(footArmor2);
         this.objects.inventory.footArmor2 = footArmor2;
 
 
+        let addLabelWithValueReturnValue = (labelText, isLeft, bottom, parent) => {
+            let containerOptions = {
+                bottom: bottom,
+                width: 0.42,
+                height: 0,
+                isSizeRelativeToParent: true
+            };
+            if(isLeft) {
+                containerOptions.left = 20;
+            } else {
+                containerOptions.right = 20;
+            }
+
+            let container = new STGameObject(containerOptions);
+
+            let label = new STText({
+                left: 0,
+                top: 0,
+                text: labelText,
+                color: "black"
+            });
+
+            let value = new STText({
+                right: 0,
+                top: 0,
+                text: "0",
+                isRightToLeft: true,
+                color: "black"
+            });
+
+            container.addChild(label);
+            container.addChild(value);
+            parent.addChild(container);
+
+            return value;
+        };
+
+        this.objects.playerStatsLabels.health = addLabelWithValueReturnValue("Health: ", true, 110, inventory);
+        this.objects.playerStatsLabels.armor = addLabelWithValueReturnValue("Armor: ", true, 80, inventory);
+        this.objects.playerStatsLabels.regeneration = addLabelWithValueReturnValue("Regeneration: ", true, 50, inventory);
+
+        this.objects.playerStatsLabels.damage = addLabelWithValueReturnValue("Damage: ", false, 110, inventory);
+        this.objects.playerStatsLabels.speed = addLabelWithValueReturnValue("Speed: ", false, 80, inventory);
+        this.objects.playerStatsLabels.dps = addLabelWithValueReturnValue("Damage / sec: ", false, 50, inventory);
+
+
         // Menu buttons
-        this.objects.menu.btnPlayerStats = this.createMenuWindowButton(this.objects.windows.playerStats, "img/btnPlayerStats.png", 10);
+        this.objects.menu.btnStash = this.createMenuWindowButton(this.objects.windows.stash, "img/btnStash.png", 10);
 
-        this.objects.menu.btnStash = this.createMenuWindowButton(this.objects.windows.stash, "img/btnStash.png", 50);
-
-        this.objects.menu.btnInventory = this.createMenuWindowButton(this.objects.windows.inventory, "img/btnInventory.png", 90);
+        this.objects.menu.btnInventory = this.createMenuWindowButton(this.objects.windows.inventory, "img/btnInventory.png", 50);
     }
     createSideWindow(title, isLeft) {
         let options = {
@@ -324,7 +341,9 @@ class VGame extends STGame {
         // Add listeners
         player.listeners.onChange.push(() => {this.refreshPlayerUI(player);});
         player.listeners.onItemEquip.push(() => {this.refreshPlayerUI(player);});
-        player.listeners.onItemUnequip.push(() => {this.refreshPlayerUI(player);});
+        player.listeners.onItemUnequip.push((item) => {
+            this.refreshPlayerUI(player);
+        });
         player.listeners.onExperienceGain.push(() => {this.refreshPlayerUI(player);});
         player.listeners.onLevelUp.push(() => {this.refreshPlayerUI(player);});
         player.listeners.onFightingStop.push(() => {
@@ -338,7 +357,6 @@ class VGame extends STGame {
         this.objects.playerHealthBar.setValue(player.currentHealth / player.attributes.health);
         this.objects.playerExperienceBar.setValue(player.experience / Player.getExperienceNeeded(player.level));
 
-        this.objects.playerStatsLabels.level.text = prettyNumber(player.level);
         this.objects.playerStatsLabels.health.text = prettyNumber(player.attributes.health);
         this.objects.playerStatsLabels.damage.text = prettyNumber(player.attributes.damage);
         this.objects.playerStatsLabels.speed.text = prettyNumber(player.attributes.speed, 2);
@@ -421,9 +439,6 @@ class VGame extends STGame {
                 break;
             case 32: // Space
                 this.closeWindows();
-                break;
-            case 67:
-                this.objects.menu.btnPlayerStats.toggle();
                 break;
             case 73:
                 this.objects.menu.btnInventory.toggle();
@@ -784,6 +799,7 @@ class VInventoryItem extends STGameObject {
         let defaults = {
             hoverInfo: null,
             item: null,
+            itemSlot: null,
             image: null,
             isFlippedHorizontally: false,
             currentYOffset: 0
@@ -828,6 +844,9 @@ class VInventoryItem extends STGameObject {
             this.hoverInfo.top = vGame.height - this.hoverInfo.height;
         }
         this.hoverInfo.updateRelativeVariables();
+    }
+    onClick(x, y) {
+        game.player.unequipItem(this.itemSlot);
     }
     onMouseMove(x, y) {
         this.refreshHoverInfoPosition(x, y);
@@ -913,6 +932,7 @@ class VItem extends STGameObject {
         });
         this.item.listeners.onUnequip.push(()=>{
             vGame.objects.itemsInStash.push(this);
+            vGame.reorganizeStashItems();
         });
     }
     refreshHoverInfoPosition(globalX, globalY) {
