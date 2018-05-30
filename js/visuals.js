@@ -174,7 +174,7 @@ class VGame extends STGame {
         this.objects.inventory.weapon1 = weapon1;
 
         let weapon2 = new VInventoryItem({
-            right: -15,
+            right: -10,
             top: -20,
             width: 75,
             height: 225,
@@ -857,8 +857,10 @@ class VInventoryItem extends STGameObject {
     }
     static getRelativeImageYOffset(item) {
         switch(item.name) {
+            case "Facepeeler":
+            case "Claw":
             case "Spiked Shield": 
-            case "Tower Shield": return 0.3;
+            case "Tower Shield": return 0.4;
             default: return 0;
         }
     }
@@ -1031,6 +1033,24 @@ class VItem extends STGameObject {
                     left: containerPadding,
                     top: top,
                     text: prettyWord(property.args[0]) + " per " + prettyWord(property.args[1]),
+                    color: "black"
+                });
+
+                let value = new STText({
+                    right: containerPadding,
+                    top: top,
+                    text: prettyNumber(property.value, 2),
+                    isRightToLeft: true,
+                    color: "black"
+                });
+    
+                hoverInfo.addChild(label);
+                hoverInfo.addChild(value);
+            } else if(property.type == "attributePerLevel") {
+                let label = new STText({
+                    left: containerPadding,
+                    top: top,
+                    text: prettyWord(property.attribute) + " per level",
                     color: "black"
                 });
 

@@ -356,6 +356,9 @@ class Player extends Character {
             if(property.type == "attributeFlat") {
                 this.attributes[property.attribute] += property.value;
             }
+            else if(property.type == "attributePerLevel") {
+                this.attributes[property.attribute] += property.value * this.level;
+            }
         }
 
         for(var index in this.equippedItems){
@@ -689,6 +692,18 @@ class Item extends ObservableObject {
                     }]
                 },
                 {
+                    name: "Claw",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "damage",
+                        baseMin: 3
+                    },{
+                        type: "attributeFlat",
+                        attribute: "speed",
+                        baseMin: 0.2
+                    }]
+                },
+                {
                     name: "Spiked Shield",
                     tags: ["shield"],
                     properties: [{
@@ -759,6 +774,18 @@ class Item extends ObservableObject {
                         attribute: "armor",
                         baseMin: 25
                     }]
+                },
+                {
+                    name: "Leather Armor",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "armor",
+                        baseMin: 15
+                    },{
+                        type: "attributeFlat",
+                        attribute: "health",
+                        baseMin: 25
+                    }]
                 }
             ],
             legArmor: [
@@ -767,11 +794,23 @@ class Item extends ObservableObject {
                     properties: [{
                         type: "attributeFlat",
                         attribute: "armor",
-                        baseMin: 5
+                        baseMin: 10
                     }, {
                         type: "attributeFlat",
                         attribute: "speed",
                         baseMin: 0.1
+                    }]
+                },
+                {
+                    name: "Chain Pants",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "armor",
+                        baseMin: 20
+                    }, {
+                        type: "attributeFlat",
+                        attribute: "health",
+                        baseMin: 20
                     }]
                 }
             ],
@@ -781,11 +820,31 @@ class Item extends ObservableObject {
                     properties: [{
                         type: "attributeFlat",
                         attribute: "armor",
-                        baseMin: 5
+                        baseMin: 7
                     }, {
                         type: "attributeFlat",
                         attribute: "speed",
                         baseMin: 0.1
+                    }]
+                },
+                {
+                    name: "Wooden Boot",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "armor",
+                        baseMin: 15
+                    }]
+                },
+                {
+                    name: "Spiked Boot",
+                    properties: [{
+                        type: "attributeFlat",
+                        attribute: "armor",
+                        baseMin: 5
+                    }, {
+                        type: "attributeFlat",
+                        attribute: "damage",
+                        baseMin: 5
                     }]
                 }
             ]
@@ -799,6 +858,18 @@ class Item extends ObservableObject {
                         type: "attributePerAttribute",
                         args: ["damage", "speed"],
                         baseMin: 15
+                    }]
+                },
+                {
+                    name: "Facepeeler",
+                    properties: [{
+                        type: "attributePerLevel",
+                        attribute: "damage",
+                        baseMin: 3
+                    },{
+                        type: "attributePerLevel",
+                        attribute: "speed",
+                        baseMin: 0.05
                     }]
                 }
             ],
