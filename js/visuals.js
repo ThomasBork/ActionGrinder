@@ -485,7 +485,7 @@ class VRectWithBar extends STRect {
         });
         this.addChild(this.bar);
     }
-}
+} 
 
 class VClickableRectWithBar extends VRectWithBar {
     constructor(options) {

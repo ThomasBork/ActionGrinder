@@ -798,7 +798,7 @@ class Item extends ObservableObject {
                     properties: [{
                         type: "attributePerAttribute",
                         args: ["damage", "speed"],
-                        baseMin: 10
+                        baseMin: 15
                     }]
                 }
             ],
@@ -828,7 +828,7 @@ class Item extends ObservableObject {
                     properties: [{
                         type: "attributePerAttribute",
                         args: ["damage", "regeneration"],
-                        baseMin: 4
+                        baseMin: 5
                     }]
                 }
             ],
@@ -838,7 +838,7 @@ class Item extends ObservableObject {
                     properties: [{
                         type: "attributePerAttribute",
                         args: ["damage", "speed"],
-                        baseMin: 10
+                        baseMin: 15
                     }]
                 }
             ]

@@ -36,7 +36,7 @@ class STGameObject {
         // Set relative z
         this.relativeZ = this.z;
         if(this.relativeZ == 0) {
-            this.relativeZ = 0.0001;
+            this.relativeZ = -0.0001;
         }
 
         // Update relative position
@@ -58,12 +58,20 @@ class STGameObject {
     addChild(object) {
         this.children.push(object);
         object.parent = this;
-        if(!(object instanceof STCanvas)){
-            object.setContext(this.context);
-        }
 
         // Handle children with relative position or size
         object.updateRelativeVariables(); 
+
+        // Add to canvas
+        let containingCanvas = null;
+        if(!(this instanceof STCanvas)) {
+            containingCanvas = this.getContainingCanvas();
+        } else {
+            containingCanvas = this;
+        }
+        if(containingCanvas !== null) {
+            containingCanvas.addDescendant(object);
+        }
 
         // Sort children from highest z value to lowest
         this.children.sort(STGameObject.compareZBackToFront);
@@ -113,7 +121,16 @@ class STGameObject {
         this.children = [];
     }
     removeChild(object) {
+        // Remove from this as child
         this.children = this.children.filter(function(e) { return e !== object; });
+
+        // Remove from canvas as descendant
+        let containingCanvas = object.getContainingCanvas();
+        if(containingCanvas !== null) {
+            containingCanvas.removeDescendant(object);
+        }
+
+        // Set parent to null, if this is still the parent
         if(object.parent == this) {
             object.parent = null;
         }
@@ -150,14 +167,6 @@ class STGameObject {
         }
     }
     draw() {
-        this.drawChildren();
-    }
-    drawChildren() {
-        for(var index in this.children) {
-            if(this.children[index].isVisible) {
-                this.children[index].draw();
-            }
-        }
     }
     containsPoint(globalX, globalY) {
         let locals = this.getLocalCoordinates(globalX, globalY);
@@ -214,40 +223,196 @@ class STGameObject {
             };
         }
     }
-    handleSingleEvent(globalX, globalY, args, handlerName, onVisible, predicate) {
-        if(!this.isVisible) {
-            return false;
-        } else { 
-            if(onVisible != undefined) {
-                onVisible(this);
+    getAncestor(type) {
+        if(this.parent === null) {
+            return null;
+        } else if(this.parent instanceof type) {
+            return this.parent;
+        } else {
+            return this.parent.getAncestor(type);
+        }
+    }
+    getGame() {
+        if(this instanceof STGame) {
+            return this;
+        } else {
+            return this.parent.getGame();
+        }
+    }
+    getContainingCanvas() {
+        return this.getAncestor(STCanvas);
+    }
+    getGlobalPosition(x, y) {
+        let canvas = this.getContainingCanvas();
+        if(canvas === null) {
+            return {x: x, y: y};
+        } else {
+            return canvas.getGlobalPosition(canvas.x + x, canvas.y + y);
+        }
+    }
+    isVisibleFromAllAncestors() {
+        if(this.parent == null) {
+            return this.isVisible;
+        } else {
+            if(this.isVisible == false) {
+                return false;
+            } else {
+                return this.parent.isVisibleFromAllAncestors();
             }
+        }
+    }
+    handleMouseLeave(globalX, globalY) {
+        if(this.isMouseOver && (!this.isVisible || !this.containsPoint(globalX, globalY))) {
+            if(this.onMouseLeave !== undefined) {
+                this.onMouseLeave();
+                this.isMouseOver = false;
+            }
+        }
+        this.children.forEach((child) => {
+            child.handleMouseLeave(globalX, globalY);
+        });
+    }
+    static compareZFrontToBack (objA, objB) {
+        if(objA.z < objB.z){ return -1; }
+        if(objA.z > objB.z){ return 1; }
+        return objA.id > objB.id ? -1 : 1;
+    }
+    static compareZBackToFront (objA, objB) {
+        if(objA.z > objB.z){ return -1; }
+        if(objA.z < objB.z){ return 1; }
+        return objA.id > objB.id ? 1 : -1;
+    }
+}
 
-            // Reverse iteration to test top-most elements first
-            for(var i = this.children.length - 1; i >= 0; i--) {
-                let child = this.children[i];
-                // If the child contains the click
-                if(child.containsPoint(globalX, globalY)) {
-                    // If the child handled the click
-                    if(child.handleSingleEvent(globalX, globalY, args, handlerName, onVisible, predicate)){
-                        return true;
+class STCanvas extends STGameObject {
+    constructor(options) {
+        super(options);
+        this.canvas = document.createElement("canvas");
+        this.canvas.classList.add("game-canvas");
+        this.canvas.width = this.width;
+        this.canvas.height = this.height;
+        this.context = this.canvas.getContext("2d");
+        this.viewportX = 0;
+        this.viewportY = 0;
+        this.scaleX = 1;
+        this.scaleY = 1;
+        this.descendants = [];
+    }
+    addDescendant(object) {
+        this.addDescendantWithChildren(object);
+
+        // Sort children from highest z value to lowest
+        this.descendants.sort(STGameObject.compareZBackToFront);
+    }
+    addDescendantWithChildren(object) {
+        if(!this.descendants.includes(object)) {
+            this.descendants.push(object);
+            if(!(object instanceof STCanvas)){
+                object.setContext(this.context);
+            }
+        }
+
+        // Add all children to the canvas
+        object.children.forEach((child)=>{
+            this.addDescendantWithChildren(child);
+        });
+    }
+    removeDescendant(object) {
+        this.descendants = this.descendants.filter(function(e) { return e !== object; });
+        if(object.parent == this) {
+            object.parent = null;
+        }
+        object.children.forEach((child)=>{
+            this.removeDescendant(child);
+        });
+    }
+    draw() {
+        // Reset the transform
+        this.context.setTransform(1,0,0,1,0,0);
+
+        // Clear canvas
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Translate according to viewport
+        this.context.translate( this.viewportX, this.viewportY ); 
+
+        // Apply zoom
+        this.context.scale(this.scaleX, this.scaleY);
+
+        // Draw objects
+        this.drawDescendants();
+
+        // Draw self on parent
+        if(this.parent !== null) {
+            this.parent.context.drawImage(this.canvas, this.x, this.y, this.width, this.height);
+        }
+    }
+    drawDescendants() {
+        for(var i = 0; i<this.descendants.length; i++) {
+            if(this.descendants[i].isVisibleFromAllAncestors()){
+                this.descendants[i].draw();
+            }
+        } 
+    }
+    containsGlobalPoint(x, y) {
+        return ( this.canvas.offsetLeft <= x && x < this.canvas.offsetLeft + this.canvas.offsetWidth ) &&
+            ( this.canvas.offsetTop <= y && y < this.canvas.offsetTop + this.canvas.offsetHeight );
+    }
+    getGlobalCoordinates(localX, localY) {
+        let relativeCoordinates = {
+            x: localX + this.x + this.viewportX,
+            y: localY + this.y + this.viewportY
+        };
+        let canvas = this.getContainingCanvas();
+        if(canvas !== null) {
+            return canvas.getGlobalCoordinates(relativeCoordinates.x, relativeCoordinates.y);
+        } else {
+            return relativeCoordinates;
+        }
+    }
+    handleSingleEvent(globalX, globalY, args, handlerName, onVisible, predicate) {
+        // Reverse iteration of the descendants to visit top-most first
+        for(var i = this.descendants.length - 1; i>=0; i--) {
+            let descendant = this.descendants[i];
+            if(descendant.isVisibleFromAllAncestors()){
+                if(descendant.containsPoint(globalX, globalY)){
+                    if(onVisible != undefined) {
+                        onVisible(descendant);
+                    }
+                    if(descendant instanceof STCanvas) {
+                        if(descendant.handleSingleEvent(globalX, globalY, args, handlerName, onVisible, predicate)) {
+                            return true;
+                        }
+                    } else {
+                        let localCoordinates = descendant.getLocalCoordinates(globalX, globalY);
+                        let predicateTest = true;
+                        if(predicate != undefined){
+                            predicateTest = predicate(descendant);
+                        }
+                        if(descendant[handlerName] !== undefined && predicateTest) {
+                            let arg = [localCoordinates.x, localCoordinates.y];
+                            args.forEach((element)=>{arg.push(element);});
+                            descendant[handlerName].apply(descendant, arg);
+                            return true;
+                        }
                     }
                 }
             }
+        }
 
-            // No child handled the click event, handle this.
-            let localCoordinates = this.getLocalCoordinates(globalX, globalY);
-            let predicateTest = true;
-            if(predicate != undefined){
-                predicateTest = predicate(this);
-            }
-            if(this[handlerName] !== undefined && predicateTest) {
-                let arg = [localCoordinates.x, localCoordinates.y];
-                args.forEach((element)=>{arg.push(element);});
-                this[handlerName].apply(this, arg);
-                return true;
-            } else {
-                return false;
-            }
+        // No child handled the click event, handle this.
+        let localCoordinates = this.getLocalCoordinates(globalX, globalY);
+        let predicateTest = true;
+        if(predicate != undefined){
+            predicateTest = predicate(this);
+        }
+        if(this[handlerName] !== undefined && predicateTest) {
+            let arg = [localCoordinates.x, localCoordinates.y];
+            args.forEach((element)=>{arg.push(element);});
+            this[handlerName].apply(this, arg);
+            return true;
+        } else {
+            return false;
         }
     }
     handleMouseMove(globalX, globalY) {
@@ -276,131 +441,8 @@ class STGameObject {
             }
         });
     }
-    handleMouseLeave(globalX, globalY) {
-        if(this.isMouseOver && (!this.isVisible || !this.containsPoint(globalX, globalY))) {
-            if(this.onMouseLeave !== undefined) {
-                this.onMouseLeave();
-                this.isMouseOver = false;
-            }
-        }
-        this.children.forEach((child) => {
-            child.handleMouseLeave(globalX, globalY);
-        });
-    }
     handleScroll(globalX, globalY, speed) {
         this.handleSingleEvent(globalX, globalY, [speed], "onScroll");
-    }
-    getAncestor(type) {
-        if(this.parent === null) {
-            return null;
-        } else if(this.parent instanceof type) {
-            return this.parent;
-        } else {
-            return this.parent.getAncestor(type);
-        }
-    }
-    getGame() {
-        if(this instanceof STGame) {
-            return this;
-        } else {
-            return this.parent.getGame();
-        }
-    }
-    getContainingCanvas() {
-        return this.getAncestor(STCanvas);
-    }
-    getGlobalPosition(x, y) {
-        let canvas = this.getContainingCanvas();
-        if(canvas === null) {
-            return {x: x, y: y};
-        } else {
-            return canvas.getGlobalPosition(canvas.x + x, canvas.y + y);
-        }
-    }
-    static compareZFrontToBack (objA, objB) {
-        if(objA.z < objB.z){ return -1; }
-        if(objA.z > objB.z){ return 1; }
-        return 0;
-    }
-    static compareZBackToFront (objA, objB) {
-        if(objA.z > objB.z){ return -1; }
-        if(objA.z < objB.z){ return 1; }
-        return 0;
-    }
-}
-
-class STCanvas extends STGameObject {
-    constructor(options) {
-        super(options);
-        this.canvas = document.createElement("canvas");
-        this.canvas.classList.add("game-canvas");
-        this.canvas.width = this.width;
-        this.canvas.height = this.height;
-        this.context = this.canvas.getContext("2d");
-        this.viewportX = 0;
-        this.viewportY = 0;
-        this.scaleX = 1;
-        this.scaleY = 1;
-        this.descendants = [];
-    }
-    addDescendant(object) {
-        this.descendants.push(object);
-        if(!(object instanceof STCanvas)){
-            object.setContext(this.context);
-        }
-
-        // Sort children from highest z value to lowest
-        this.descendants.sort(STGameObject.compareZBackToFront);
-    }
-    removeDescendant(object) {
-        this.descendants = this.descendants.filter(function(e) { return e !== object; });
-        if(object.parent == this) {
-            object.parent = null;
-        }
-    }
-    draw() {
-        // Reset the transform
-        this.context.setTransform(1,0,0,1,0,0);
-
-        // Clear canvas
-        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // Translate according to viewport
-        this.context.translate( this.viewportX, this.viewportY ); 
-
-        // Apply zoom
-        this.context.scale(this.scaleX, this.scaleY);
-
-        // Draw objects
-        this.drawChildren();
-
-        // Draw self on parent
-        if(this.parent !== null) {
-            this.parent.context.drawImage(this.canvas, this.x, this.y, this.width, this.height);
-        }
-    }
-    drawDescendants() {
-        for(var i = 0; i<this.descendants.length; i++) {
-            if(this.descendants[i].isVisible){
-                this.descendants[i].draw();
-            }
-        } 
-    }
-    containsGlobalPoint(x, y) {
-        return ( this.canvas.offsetLeft <= x && x < this.canvas.offsetLeft + this.canvas.offsetWidth ) &&
-            ( this.canvas.offsetTop <= y && y < this.canvas.offsetTop + this.canvas.offsetHeight );
-    }
-    getGlobalCoordinates(localX, localY) {
-        let relativeCoordinates = {
-            x: localX + this.x + this.viewportX,
-            y: localY + this.y + this.viewportY
-        };
-        let canvas = this.getContainingCanvas();
-        if(canvas !== null) {
-            return canvas.getGlobalCoordinates(relativeCoordinates.x, relativeCoordinates.y);
-        } else {
-            return relativeCoordinates;
-        }
     }
 }
 
@@ -551,8 +593,6 @@ class STRect extends STGameObject{
         this.context.fillRect(this.x, this.y, this.width, this.height);
         this.context.fillStyle = this.color;
         this.context.fillRect(this.x + this.borderSize, this.y + this.borderSize, this.width - 2 * this.borderSize, this.height - 2 * this.borderSize);
-
-        this.drawChildren();
     }
 }
 
@@ -568,7 +608,6 @@ class STProgressBar extends STRect {
         };
 
         let settings = extend(defaults, options);
-
         mergeObjects(this, settings);
 
         this.fillObject = new STRect({
@@ -577,7 +616,6 @@ class STProgressBar extends STRect {
             width: this.getFillPercent() * (this.width - this.borderSize),
             height: this.height - this.borderSize
         });
-
         this.addChild(this.fillObject);
     }
     setValue(value) {
@@ -674,7 +712,6 @@ class STImage extends STGameObject {
             }
             this.context.drawImage(this.image, drawX, drawY, this.width, this.height);
             this.context.restore();
-            this.drawChildren();
         }
     }
 }
