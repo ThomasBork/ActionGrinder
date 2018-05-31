@@ -30,6 +30,7 @@ class Game extends ObservableObject {
     }
     initialize() {
         Item.initializeItemSystem();
+        Achievement.initializeAchievements();
 
         this.player = new Player();
 
@@ -60,6 +61,56 @@ class Game extends ObservableObject {
     removeItemFromStash(item) {
         removeElement(this.items, item);
         this.callListeners(this.listeners.onItemRemovedFromStash);
+    }
+}
+
+class Achievement extends ObservableObject {
+    constructor(type, name, hint, onComplete) {
+        super();
+        this.type = type;
+        this.name = name;
+        this.hint = hint;
+        this.onComplete = onComplete;
+
+        this.isVisible = false;
+        this.isCompleted = false;
+
+        this.listeners.onShow = [];
+        this.listeners.onComplete = [];
+    }
+    show() {
+        this.isVisible = true;
+        this.callListeners(this.listeners.onShow);
+    }
+    complete() {
+        this.isCompleted = true;
+        if(this.onComplete != undefined) {
+            this.onComplete();
+        }
+        this.callListeners(this.listeners.onComplete);
+    }
+    static initializeAchievements() {
+        let achievements = [];
+
+        achievements.push(new ReachLevelAchievement(5, "Getting Started", Achievement.giveGoldFunction(1000)));
+        achievements.push(new ReachLevelAchievement(10, "Level 10", Achievement.giveGoldFunction(2000)));
+        achievements.push(new ReachLevelAchievement(15, "Level 15", Achievement.giveGoldFunction(3000)));
+        achievements.push(new ReachLevelAchievement(20, "Level 20", Achievement.giveGoldFunction(4000)));
+
+        Achievement.achievements = achievements;
+    }
+    static giveGoldFunction (amount) {
+        return () => {game.player.giveGold(amount);};
+    }
+    static getNotCompletedAchievements () {
+        return Achievement.achievements.filter((achievement) => {return !achievement.isCompleted;});
+    }
+}
+
+class ReachLevelAchievement extends Achievement {
+    constructor(level, name, onComplete) {
+        super("reachLevel", name, "Reach level " + level, onComplete);
+        this.level = level;
     }
 }
 
@@ -325,6 +376,7 @@ class Player extends Character {
             })
         );
 
+        this.listeners.onGoldGain = [];
         this.listeners.onExperienceGain = [];
         this.listeners.onLevelUp = [];
         this.listeners.onItemEquip = [];
@@ -479,12 +531,20 @@ class Player extends Character {
     levelUp() {
         this.level++;
         this.recalculateAttributes();
-        // If level == 5, unlock first boss
-        // if(this.level == 5) {
-        //     game.objects.bossLevels[0].unlock();
-        //     game.objects.bossLevels[0].show();
-        // }
+
+        Achievement.getNotCompletedAchievements().forEach((achievement) => {
+            if(achievement.type == "reachLevel") {
+                if(this.level >= achievement.level){
+                    achievement.complete();
+                }
+            }
+        });
+
         this.callListeners(this.listeners.onLevelUp);
+    }
+    giveGold(amount) {
+        this.gold += amount;
+        this.callListeners(this.listeners.onGoldGain, amount);
     }
     equipItem(item, slot) {
         this.unequipItem(slot);

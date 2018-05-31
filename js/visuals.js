@@ -111,20 +111,27 @@ class VGame extends STGame {
         this.addChild(this.objects.playerHealthBar);
 
         this.objects.playerLevel = new STText({
-            x: 0,
-            y: 0,
+            left: 0,
+            top: 0,
             text: "Level: ?"
         });
         this.addChild(this.objects.playerLevel);
 
         this.objects.playerExperienceBar = new STProgressBar({
-            x: 0,
-            y: 16,
+            left: 0,
+            top: 16,
             width: 50,
             height: 5,
             value: 0
         });
         this.addChild(this.objects.playerExperienceBar);
+
+        this.objects.playerGold = new STText({
+            left: 0,
+            top: 25,
+            text: "Gold: 0"
+        });
+        this.addChild(this.objects.playerGold);
 
         // Windows
 
@@ -344,6 +351,7 @@ class VGame extends STGame {
         player.listeners.onItemUnequip.push((item) => {
             this.refreshPlayerUI(player);
         });
+        player.listeners.onGoldGain.push(() => {this.refreshPlayerUI(player);});
         player.listeners.onExperienceGain.push(() => {this.refreshPlayerUI(player);});
         player.listeners.onLevelUp.push(() => {this.refreshPlayerUI(player);});
         player.listeners.onFightingStop.push(() => {
@@ -356,6 +364,7 @@ class VGame extends STGame {
         this.objects.playerLevel.text = "Level: " + prettyNumber(player.level);
         this.objects.playerHealthBar.setValue(player.currentHealth / player.attributes.health);
         this.objects.playerExperienceBar.setValue(player.experience / Player.getExperienceNeeded(player.level));
+        this.objects.playerGold.text = "Gold: " + prettyNumber(player.gold);
 
         this.objects.playerStatsLabels.health.text = prettyNumber(player.attributes.health);
         this.objects.playerStatsLabels.damage.text = prettyNumber(player.attributes.damage);
@@ -1050,7 +1059,7 @@ class VItem extends STGameObject {
                 let label = new STText({
                     left: containerPadding,
                     top: top,
-                    text: prettyWord(property.attribute) + " per level",
+                    text: prettyWord(property.attribute) + " per player level",
                     color: "black"
                 });
 
