@@ -242,13 +242,16 @@ class STGameObject {
     getContainingCanvas() {
         return this.getAncestor(STCanvas);
     }
-    getGlobalPosition(x, y) {
-        let canvas = this.getContainingCanvas();
-        if(canvas === null) {
-            return {x: x, y: y};
-        } else {
-            return canvas.getGlobalPosition(canvas.x + x, canvas.y + y);
-        }
+    getGlobalPosition() {
+        return this.getGlobalCoordinates(this.x, this.y);
+    }
+    getGlobalDimensions() {
+        let globalPosition = this.getGlobalCoordinates(this.x, this.y);
+        let globalMaxPosition = this.getGlobalCoordinates(this.x + this.width, this.y + this.height);
+        return {
+            width: globalMaxPosition.x - globalPosition.x,
+            height: globalMaxPosition.y - globalPosition.y
+        };
     }
     isVisibleFromAllAncestors() {
         if(this.parent == null) {
@@ -638,7 +641,9 @@ class STText extends STGameObject {
             font: "Arial",
             fontSize: 14,
             fontString: "14px Arial",
-            isRightToLeft: false
+            isRightToLeft: false,
+            align: "start",
+            isBold: false
         }
 
         let settings = extend(defaults, options);
@@ -653,11 +658,15 @@ class STText extends STGameObject {
     }
     updateFontString() {
         this.fontString = this.fontSize + "px " + this.font;
+        if(this.isBold) {
+            this.fontString = "bold " + this.fontString;
+        }
     }
     draw() {
         this.context.save();
         this.context.font = this.fontString;
         this.context.fillStyle = this.color;
+        this.context.textAlign = this.align;
         let drawX = this.x;
         if(this.isRightToLeft) {
             drawX = this.x + this.width - this.context.measureText(this.text).width;

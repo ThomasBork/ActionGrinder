@@ -36,6 +36,7 @@ class VGame extends STGame {
             areasContainer: null,
             itemsInInventory: [],
             itemsInStash: [],
+            floatingTexts: [],
             playerHealthBar: null,
             playerLevel: null,
             playerExperienceBar: null,
@@ -47,7 +48,9 @@ class VGame extends STGame {
                 speed: null,
                 dps: null,
                 armor: null,
-                regeneration: null
+                regeneration: null,
+                criticalChance: null,
+                criticalMultiplier: null
             },
             inventory: {
                 headArmor: null,
@@ -59,11 +62,12 @@ class VGame extends STGame {
                 weapon2: null
             },
             windows: {
+                quests: null,
                 inventory: null,
                 stash: null
             },
             menu: {
-                btnPlayerStats: null,
+                btnQuests: null,
                 btnInventory: null,
                 btnStash: null
             }
@@ -103,9 +107,9 @@ class VGame extends STGame {
         // HUD
         this.objects.playerHealthBar = new STProgressBar({
             left: 200,
-            top: 0,
+            top: 20,
             width: this.width - 400,
-            height: 10,
+            height: 20,
             value: 1
         });
         this.addChild(this.objects.playerHealthBar);
@@ -134,6 +138,31 @@ class VGame extends STGame {
         this.addChild(this.objects.playerGold);
 
         // Windows
+
+        // Quests
+        this.objects.windows.quests = this.createSideWindow("Quests", false);
+        this.objects.windows.quests.canvas = new VCanvas({
+            left: 25,
+            top: 45,
+            width: this.objects.windows.quests.width - 25 * 2,
+            height: this.objects.windows.quests.height - 45 - 25,
+            isDraggableX: false,
+            isDraggableY: true
+        });
+        this.objects.windows.quests.addChild(this.objects.windows.quests.canvas);
+
+        for(let i = 0; i<Quest.quests.length; i++) {
+            let quest = Quest.quests[i];
+            let vQuest = new VQuest({
+                quest: quest,
+                width: this.objects.windows.quests.canvas.width,
+                height: 200,
+                left: 0,
+                top: i * 240
+            });
+            this.objects.windows.quests.canvas.addChild(vQuest);
+        }
+
 
         // Stash
         this.objects.windows.stash = this.createSideWindow("Stash", false);
@@ -270,19 +299,23 @@ class VGame extends STGame {
             return value;
         };
 
-        this.objects.playerStatsLabels.health = addLabelWithValueReturnValue("Health: ", true, 110, inventory);
-        this.objects.playerStatsLabels.armor = addLabelWithValueReturnValue("Armor: ", true, 80, inventory);
-        this.objects.playerStatsLabels.regeneration = addLabelWithValueReturnValue("Regeneration: ", true, 50, inventory);
+        this.objects.playerStatsLabels.health = addLabelWithValueReturnValue("Health: ", true, 170, inventory);
+        this.objects.playerStatsLabels.armor = addLabelWithValueReturnValue("Armor: ", true, 140, inventory);
+        this.objects.playerStatsLabels.regeneration = addLabelWithValueReturnValue("Regeneration: ", true, 110, inventory);
 
-        this.objects.playerStatsLabels.damage = addLabelWithValueReturnValue("Damage: ", false, 110, inventory);
-        this.objects.playerStatsLabels.speed = addLabelWithValueReturnValue("Speed: ", false, 80, inventory);
+        this.objects.playerStatsLabels.damage = addLabelWithValueReturnValue("Damage: ", false, 170, inventory);
+        this.objects.playerStatsLabels.speed = addLabelWithValueReturnValue("Speed: ", false, 140, inventory);
+        this.objects.playerStatsLabels.criticalChance = addLabelWithValueReturnValue("Critical chance: ", false, 110, inventory);
+        this.objects.playerStatsLabels.criticalMultiplier = addLabelWithValueReturnValue("Critical multiplier: ", false, 80, inventory);
         this.objects.playerStatsLabels.dps = addLabelWithValueReturnValue("Damage / sec: ", false, 50, inventory);
 
 
         // Menu buttons
-        this.objects.menu.btnStash = this.createMenuWindowButton(this.objects.windows.stash, "img/btnStash.png", 10);
+        this.objects.menu.btnQuests = this.createMenuWindowButton(this.objects.windows.quests, "img/btnQuests.png", 10);
 
-        this.objects.menu.btnInventory = this.createMenuWindowButton(this.objects.windows.inventory, "img/btnInventory.png", 50);
+        this.objects.menu.btnStash = this.createMenuWindowButton(this.objects.windows.stash, "img/btnStash.png", 50);
+
+        this.objects.menu.btnInventory = this.createMenuWindowButton(this.objects.windows.inventory, "img/btnInventory.png", 90);
     }
     createSideWindow(title, isLeft) {
         let options = {
@@ -343,36 +376,63 @@ class VGame extends STGame {
         });
     }
     loadPlayer(player) {
+        this.refreshPlayerHealthBar(player);
+        this.refreshPlayerAttributes(player);
+        this.refreshPlayerInventory(player);
         this.refreshPlayerUI(player);
 
         // Add listeners
-        player.listeners.onChange.push(() => {this.refreshPlayerUI(player);});
-        player.listeners.onItemEquip.push(() => {this.refreshPlayerUI(player);});
-        player.listeners.onItemUnequip.push((item) => {
-            this.refreshPlayerUI(player);
+        player.listeners.onAttributesChanged.push(() => {this.refreshPlayerAttributes(player);});
+        player.listeners.onRegeneration.push(() => {this.refreshPlayerHealthBar(player);});
+        player.listeners.onDamageTaken.push((damage) => {
+            let pos = this.objects.playerHealthBar.fillObject.getGlobalPosition();
+            let dim = this.objects.playerHealthBar.fillObject.getGlobalDimensions();
+            let speed = 100;
+            let degrees = randomFloat(1.5 * Math.PI, 1.5 * Math.PI);
+            this.spawnFloatingText({
+                text: prettyNumber(damage),
+                left: pos.x + dim.width,
+                top: pos.y + dim.height,
+                fontSize: 25,
+                align: "center",
+                color: "red",
+                isBold: true,
+                z: -2,
+                dx: speed * Math.cos(degrees),
+                dy: speed * -Math.sin(degrees)
+            });
+            this.refreshPlayerHealthBar(player);
         });
+
+        player.listeners.onItemEquip.push(() => {this.refreshPlayerInventory(player);});
+        player.listeners.onItemUnequip.push((item) => {this.refreshPlayerInventory(player);});
+
         player.listeners.onGoldGain.push(() => {this.refreshPlayerUI(player);});
         player.listeners.onExperienceGain.push(() => {this.refreshPlayerUI(player);});
         player.listeners.onLevelUp.push(() => {this.refreshPlayerUI(player);});
+
         player.listeners.onFightingStop.push(() => {
             this.removeAreas();
             this.objects.farmMaps.forEach((map)=>{map.bar.hide();});
             this.refreshPlayerUI(player);
         });
     }
-    refreshPlayerUI (player) {
-        this.objects.playerLevel.text = "Level: " + prettyNumber(player.level);
+    refreshPlayerHealthBar(player) {
         this.objects.playerHealthBar.setValue(player.currentHealth / player.attributes.health);
-        this.objects.playerExperienceBar.setValue(player.experience / Player.getExperienceNeeded(player.level));
-        this.objects.playerGold.text = "Gold: " + prettyNumber(player.gold);
-
+    }
+    refreshPlayerAttributes(player) {
         this.objects.playerStatsLabels.health.text = prettyNumber(player.attributes.health);
         this.objects.playerStatsLabels.damage.text = prettyNumber(player.attributes.damage);
         this.objects.playerStatsLabels.speed.text = prettyNumber(player.attributes.speed, 2);
-        this.objects.playerStatsLabels.dps.text = prettyNumber(player.attributes.damage * player.attributes.speed, 2);
+        this.objects.playerStatsLabels.criticalChance.text = prettyNumber(player.attributes.criticalChance * 100, 2) + "%";
+        this.objects.playerStatsLabels.criticalMultiplier.text = prettyNumber(player.attributes.criticalMultiplier, 2);
+        let dps = player.attributes.damage * player.attributes.speed * (1 - player.attributes.criticalChance) + 
+            player.attributes.damage * player.attributes.speed * player.attributes.criticalChance * player.attributes.criticalMultiplier;
+        this.objects.playerStatsLabels.dps.text = prettyNumber(dps, 2);
         this.objects.playerStatsLabels.armor.text = prettyNumber(player.attributes.armor);
         this.objects.playerStatsLabels.regeneration.text = prettyNumber(player.attributes.regeneration, 2);
-
+    }
+    refreshPlayerInventory(player) {
         // Inventory
         for(var slot in player.equippedItems) {
             let playerSlot = player.equippedItems[slot];
@@ -384,6 +444,11 @@ class VGame extends STGame {
                 inventorySlot.show();
             }
         }
+    }
+    refreshPlayerUI (player) {
+        this.objects.playerLevel.text = "Level: " + prettyNumber(player.level);
+        this.objects.playerExperienceBar.setValue(player.experience / Player.getExperienceNeeded(player.level));
+        this.objects.playerGold.text = "Gold: " + prettyNumber(player.gold);
     }
     loadStash(stashItems) {
 
@@ -409,6 +474,23 @@ class VGame extends STGame {
     }
     onUpdate(dTime) {
         this.game.update(dTime);
+
+        let textsToRemove = [];
+        for(let i = 0; i<this.objects.floatingTexts.length; i++) {
+            let text = this.objects.floatingTexts[i];
+            text.update(dTime);
+            if(text.durationLeft <= 0) {
+                textsToRemove.push(text);
+            }
+        }
+        for(let i = 0; i<textsToRemove.length; i++) {
+            removeElement(this.objects.floatingTexts, textsToRemove[i]);
+        }
+    }
+    spawnFloatingText(options) {
+        let text = new FloatingText(options);
+        this.addChild(text);
+        this.objects.floatingTexts.push(text);
     }
     setAreas(areas) {
         // Remove old areas
@@ -631,7 +713,10 @@ class VMap extends VClickableRectWithBar {
             vGame.objects.areas.push(vArea);
             vGame.objects.areasContainer.addChild(vArea);
 
-            area.listeners.onChange.push(()=>{
+            area.listeners.onDamageTaken.push((damage)=>{
+                this.refreshHealthBar();
+            });
+            area.listeners.onRegeneration.push((damage)=>{
                 this.refreshHealthBar();
             });
 
@@ -692,7 +777,10 @@ class VArea extends VClickableRectWithBar {
         this.area.listeners.onStart.push(()=>{
             this.bar.show();
         });
-        this.area.listeners.onChange.push(() => {
+        this.area.listeners.onDamageTaken.push((damage)=>{
+            this.refreshHealthBar();
+        });
+        this.area.listeners.onRegeneration.push((damage)=>{
             this.refreshHealthBar();
         });
         this.area.listeners.onComplete.push(()=>{
@@ -997,16 +1085,25 @@ class VItem extends STGameObject {
         hoverInfo.hide();
         let addPropertyLine = (property, top) => {
             if(property.type == "attributeFlat") {
+                let labelText = prettyWord(property.attribute);
+                if(property.attribute == "criticalChance") {
+                    labelText = "Critical chance";
+                } else if (property.attribute == "criticalMultiplier"){
+                    labelText = "Critical multiplier";
+                }
+
                 let label = new STText({
                     left: containerPadding,
                     top: top,
-                    text: prettyWord(property.attribute),
+                    text: labelText,
                     color: "black"
                 });
     
                 let numberText = prettyNumber(property.value);
-                if(property.attribute == "regeneration" || property.attribute == "speed") {
+                if(["regeneration", "speed", "criticalMultiplier"].includes(property.attribute)) {
                     numberText = prettyNumber(property.value, 2);
+                } else if ("criticalChance" == property.attribute) {
+                    numberText = prettyNumber(property.value * 100, 2) + "%"; 
                 }
 
                 let value = new STText({
@@ -1073,6 +1170,15 @@ class VItem extends STGameObject {
     
                 hoverInfo.addChild(label);
                 hoverInfo.addChild(value);
+            } else if(property.isSpecial) {
+                let label = new STText({
+                    left: containerPadding,
+                    top: top + 2,
+                    fontSize: 12,
+                    text: property.specialText,
+                    color: "black"
+                });
+                hoverInfo.addChild(label);
             }
         };
 
@@ -1150,6 +1256,59 @@ class VItem extends STGameObject {
     }
 }
 
+class VQuest extends STGameObject {
+    constructor(options) {
+        super(options);
+        let defaults = {
+            quest: null,
+            vBackground: null
+        };
+        let settings = extend(defaults, options);
+        mergeObjects(this, settings);
+
+        this.vBackground = new STImage({
+            left: 0,
+            top: 0,
+            width: 1,
+            height: 1,
+            isSizeRelativeToParent: true,
+            path: "img/questBackground.png"
+        });
+        this.addChild(this.vBackground);
+
+        this.vBackground.addChild(new STText({
+            left: this.vBackground.width / 2,
+            top: 15,
+            width: 0,
+            height: 0,
+            fontSize: 20,
+            text: this.quest.name,
+            color: "black",
+            align: "center"
+        }));
+        this.vBackground.addChild(new STText({
+            left: this.vBackground.width / 2,
+            top: 90,
+            width: 0,
+            height: 0,
+            fontSize: 16,
+            text: this.quest.hint,
+            color: "black",
+            align: "center"
+        }));
+
+        this.quest.listeners.onComplete.push(()=>{
+            this.vBackground.addChild(new STImage({
+                left: 50,
+                top: this.vBackground.height / 2 - 50,
+                width: 100,
+                height: 100,
+                path: "img/areaClear.png"
+            }));
+        });
+    }
+}
+
 class VCanvas extends STCanvas {
     constructor(options) {
         super(options);
@@ -1214,6 +1373,28 @@ class VCanvas extends STCanvas {
             } else {
                 this.viewportY += 25;
             }
+        }
+    }
+}
+
+class FloatingText extends STText {
+    constructor(options) {
+        super(options);
+        let defaults = {
+            durationLeft: 1,
+            dx: 0,
+            dy: 0
+        };
+        let settings = extend(defaults, options);
+        mergeObjects(this, settings);
+    }
+    update (dTime) {
+        this.x += this.dx * dTime;
+        this.y += this.dy * dTime;
+
+        this.durationLeft -= dTime;
+        if(this.durationLeft <= 0) {
+            this.remove();
         }
     }
 }

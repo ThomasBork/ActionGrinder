@@ -30,7 +30,7 @@ class Game extends ObservableObject {
     }
     initialize() {
         Item.initializeItemSystem();
-        Achievement.initializeAchievements();
+        Quest.initializeQuests();
 
         this.player = new Player();
 
@@ -64,7 +64,7 @@ class Game extends ObservableObject {
     }
 }
 
-class Achievement extends ObservableObject {
+class Quest extends ObservableObject {
     constructor(type, name, hint, onComplete) {
         super();
         this.type = type;
@@ -89,25 +89,25 @@ class Achievement extends ObservableObject {
         }
         this.callListeners(this.listeners.onComplete);
     }
-    static initializeAchievements() {
-        let achievements = [];
+    static initializeQuests() {
+        let quests = [];
 
-        achievements.push(new ReachLevelAchievement(5, "Getting Started", Achievement.giveGoldFunction(1000)));
-        achievements.push(new ReachLevelAchievement(10, "Level 10", Achievement.giveGoldFunction(2000)));
-        achievements.push(new ReachLevelAchievement(15, "Level 15", Achievement.giveGoldFunction(3000)));
-        achievements.push(new ReachLevelAchievement(20, "Level 20", Achievement.giveGoldFunction(4000)));
+        quests.push(new ReachLevelQuest(5, "Getting Started", Quest.giveGoldFunction(1000)));
+        quests.push(new ReachLevelQuest(10, "Level 10", Quest.giveGoldFunction(2000)));
+        quests.push(new ReachLevelQuest(15, "Level 15", Quest.giveGoldFunction(3000)));
+        quests.push(new ReachLevelQuest(20, "Level 20", Quest.giveGoldFunction(4000)));
 
-        Achievement.achievements = achievements;
+        Quest.quests = quests;
     }
     static giveGoldFunction (amount) {
         return () => {game.player.giveGold(amount);};
     }
-    static getNotCompletedAchievements () {
-        return Achievement.achievements.filter((achievement) => {return !achievement.isCompleted;});
+    static getNotCompletedQuests () {
+        return Quest.quests.filter((quest) => {return !quest.isCompleted;});
     }
 }
 
-class ReachLevelAchievement extends Achievement {
+class ReachLevelQuest extends Quest {
     constructor(level, name, onComplete) {
         super("reachLevel", name, "Reach level " + level, onComplete);
         this.level = level;
@@ -196,11 +196,15 @@ class FarmMap extends Map {
                 damage: 6,
                 speed: 1,
                 health: 100,
-                regeneration: 1
+                regeneration: 1,
+                criticalChance: 0.2,
+                criticalMultiplier: 1.5
             };
             switch(areaType) {
                 case "lethal":
-                    attributes.damage *= 3;
+                    attributes.damage *= 2;
+                    attributes.criticalChance *= 2;
+                    attributes.criticalMultiplier = 2;
                     break;
                 case "armored":
                     attributes.armor *= 2;
@@ -243,7 +247,9 @@ class Attributes {
             speed: 0,
             armor: 0,
             health: 0,
-            regeneration: 0
+            regeneration: 0,
+            criticalChance: 0,
+            criticalMultiplier: 0
         }
         let settings = extend(defaults, options);
         mergeObjects(this, settings);
@@ -273,6 +279,10 @@ class Attributes {
 class Character extends ObservableObject {
     constructor(attributes) {
         super();
+        this.listeners.onDamageTaken = [];
+        this.listeners.onRegeneration = [];
+        this.listeners.onAttributesChanged = [];
+
         this.level = 1;
 
         this.baseAttributes = attributes;
@@ -287,7 +297,7 @@ class Character extends ObservableObject {
     recalculateAttributes() {
         this.recalculateAttributesBasedOnLevel();
         this.currentHealth = this.attributes.health;
-        this.callListeners(this.listeners.onChange);
+        this.callListeners(this.listeners.onAttributesChanged);
     }
     recalculateAttributesBasedOnLevel() {
         this.attributes = new Attributes();
@@ -298,7 +308,10 @@ class Character extends ObservableObject {
         // Level attributes
         let levelMultiplierAmount = this.getLevelMultiplierAmount();
         let levelMultiplier = Attributes.getMultiplier(levelMultiplierAmount);
+        levelMultiplier.criticalChance = 0;
+        levelMultiplier.criticalMultiplier = 0;
         let levelAttributes = new Attributes();
+
         levelAttributes.add(this.baseAttributes);
         levelAttributes.multiply(levelMultiplier);
         for(var i = 1; i<this.level; i++) {
@@ -307,12 +320,16 @@ class Character extends ObservableObject {
     }
     dealDamageTo(character) {
         let damageDealt = this.attributes.damage;
+        let isCritical = Math.random() < this.attributes.criticalChance;
+        if(isCritical) {
+            damageDealt *= this.attributes.criticalMultiplier;
+        }
         character.takeDamage(damageDealt);
     }
     takeDamage(damageDealt) {
         let damageTaken = damageDealt * 100 / (100 + this.attributes.armor);
         this.currentHealth -= damageTaken;
-        this.callListeners(this.listeners.onChange);
+        this.callListeners(this.listeners.onDamageTaken, damageTaken);
     }
     applyRegeneration(dTime) {
         let healing = this.attributes.regeneration * dTime;
@@ -320,7 +337,7 @@ class Character extends ObservableObject {
         if(this.currentHealth > this.attributes.health) {
             this.currentHealth = this.attributes.health;
         }
-        this.callListeners(this.listeners.onChange);
+        this.callListeners(this.listeners.onRegeneration);
     }
 }
 
@@ -372,7 +389,9 @@ class Player extends Character {
                 damage: 30,
                 speed: 1,
                 health: 100,
-                regeneration: 4
+                regeneration: 4,
+                criticalChance: 0.1,
+                criticalMultiplier: 1.5
             })
         );
 
@@ -425,6 +444,30 @@ class Player extends Character {
         let addMultiplicativeProperties = (property) => {
             if(property.type == "attributePercent") {
                 this.attributes[property.attribute] *= 1 + property.value;
+            } else if (property.isSpecial) {
+                if(property.type == "twinWeapons") {
+                    if(
+                        this.equippedItems.weapon1 != null && 
+                        this.equippedItems.weapon2 != null &&
+                        this.equippedItems.weapon1.name == this.equippedItems.weapon2.name
+                    ) {
+                        this.attributes.damage *= 1.5;
+                    }
+                } 
+                else if(property.type == "twinFootArmor") {
+                    if(
+                        this.equippedItems.footArmor1 != null && 
+                        this.equippedItems.footArmor2 != null &&
+                        this.equippedItems.footArmor1.name == this.equippedItems.footArmor2.name
+                    ) {
+                        this.attributes.speed *= 1.5;
+                    }
+                }
+                else if(property.type == "noBodyArmor") {
+                    if(this.equippedItems.bodyArmor == null) {
+                        this.attributes.speed *= 2;
+                    }
+                }
             }
         }
 
@@ -454,7 +497,7 @@ class Player extends Character {
         this.attributes.add(attributePerAttributeSet);
 
 
-        this.callListeners(this.listeners.onChange);
+        this.callListeners(this.listeners.onAttributesChanged);
     }
     update(dTime) {
         // Regeneration
@@ -532,10 +575,10 @@ class Player extends Character {
         this.level++;
         this.recalculateAttributes();
 
-        Achievement.getNotCompletedAchievements().forEach((achievement) => {
-            if(achievement.type == "reachLevel") {
-                if(this.level >= achievement.level){
-                    achievement.complete();
+        Quest.getNotCompletedQuests().forEach((quest) => {
+            if(quest.type == "reachLevel") {
+                if(this.level >= quest.level){
+                    quest.complete();
                 }
             }
         });
@@ -581,7 +624,9 @@ class ItemProperty {
             max: null,
             value: null,
             isSpecial: false,
-            args: []
+            specialText: null,
+            args: [],
+            scalesWithItemLevel: true
         };
         let settings = extend(defaults, options);
         mergeObjects(this, settings);
@@ -639,12 +684,17 @@ class Item extends ObservableObject {
     }
     scaleToLevel() {
         let scaleProperty = (property) => {
-            if(property.type == "attributeFlat") {
-                property.min = property.baseMin * (0.9 + 0.1 * this.level);
-                property.max = property.baseMax * (0.9 + 0.1 * this.level);
-            } else if (property.type == "attributePercent") {
-                property.min = property.baseMin * (0.96 + 0.04 * this.level);
-                property.max = property.baseMax * (0.96 + 0.04 * this.level);
+            if(property.scalesWithItemLevel) {
+                if(property.type == "attributeFlat") {
+                    property.min = property.baseMin * (0.9 + 0.1 * this.level);
+                    property.max = property.baseMax * (0.9 + 0.1 * this.level);
+                } else if (property.type == "attributePercent") {
+                    property.min = property.baseMin * (0.96 + 0.04 * this.level);
+                    property.max = property.baseMax * (0.96 + 0.04 * this.level);
+                }
+            } else {
+                property.min = property.baseMin;
+                property.max = property.baseMax;
             }
         };
         this.implicitProperties.forEach(scaleProperty);
@@ -691,6 +741,20 @@ class Item extends ObservableObject {
                 attribute: "regeneration",
                 baseMin: 0.1,
                 baseMax: 0.5
+            },
+            criticalChance: {
+                type: "attributeFlat",
+                attribute: "criticalChance",
+                baseMin: 0.01,
+                baseMax: 0.05,
+                scalesWithItemLevel: false
+            },
+            criticalMultiplier: {
+                type: "attributeFlat",
+                attribute: "criticalMultiplier",
+                baseMin: 0.1,
+                baseMax: 0.5,
+                scalesWithItemLevel: false
             },
             percent_damage: {
                 type: "attributePercent",
@@ -951,6 +1015,14 @@ class Item extends ObservableObject {
                         args: ["damage", "armor"],
                         baseMin: 0.2
                     }]
+                },
+                {
+                    name: "Unity",
+                    properties: [{
+                        type: "twinWeapons",
+                        isSpecial: true,
+                        specialText: "+50% Damage if weapons have the same name"
+                    }]
                 }
             ],
             legArmor: [
@@ -960,6 +1032,22 @@ class Item extends ObservableObject {
                         type: "attributePerAttribute",
                         args: ["damage", "regeneration"],
                         baseMin: 5
+                    }]
+                },
+                {
+                    name: "Twin Sticks",
+                    properties: [{
+                        type: "twinFootArmor",
+                        isSpecial: true,
+                        specialText: "+50% Speed if boots have the same name"
+                    }]
+                },
+                {
+                    name: "Berserkers",
+                    properties: [{
+                        type: "noBodyArmor",
+                        isSpecial: true,
+                        specialText: "+100% Speed if you have no body armor"
                     }]
                 }
             ],
@@ -996,61 +1084,6 @@ class Item extends ObservableObject {
                 typeArray[iType] = new ItemType(typeArray[iType]);
             }
         }
-
-        Item.weightedItemProperties = {
-            weapon: [
-                [10, Item.properties.damage],
-                [10, Item.properties.speed],
-                [4, Item.properties.health],
-                [2, Item.properties.regeneration],
-                [5, Item.properties.percent_damage],
-                [5, Item.properties.percent_speed],
-                [2, Item.properties.percent_health],
-                [1, Item.properties.percent_regeneration]
-            ],
-            headArmor: [
-                [10, Item.properties.armor],
-                [4, Item.properties.speed],
-                [10, Item.properties.health],
-                [4, Item.properties.regeneration],
-                [5, Item.properties.percent_armor],
-                [2, Item.properties.percent_speed],
-                [5, Item.properties.percent_health],
-                [2, Item.properties.percent_regeneration]
-            ],
-            bodyArmor: [
-                [10, Item.properties.armor],
-                [4, Item.properties.speed],
-                [10, Item.properties.health],
-                [4, Item.properties.regeneration],
-                [5, Item.properties.percent_armor],
-                [2, Item.properties.percent_speed],
-                [5, Item.properties.percent_health],
-                [2, Item.properties.percent_regeneration]
-            ],
-            legArmor: [
-                [10, Item.properties.armor],
-                [10, Item.properties.speed],
-                [4, Item.properties.health],
-                [4, Item.properties.regeneration],
-                [5, Item.properties.percent_armor],
-                [5, Item.properties.percent_speed],
-                [2, Item.properties.percent_health],
-                [2, Item.properties.percent_regeneration]
-            ],
-            footArmor: [
-                [6, Item.properties.armor],
-                [10, Item.properties.speed],
-                [4, Item.properties.health],
-                [2, Item.properties.regeneration],
-                [6, Item.properties.damage],
-                [3, Item.properties.percent_armor],
-                [5, Item.properties.percent_speed],
-                [2, Item.properties.percent_health],
-                [1, Item.properties.percent_regeneration],
-                [3, Item.properties.percent_damage]
-            ]
-        }
     }
     static getWeightedProperties(itemType, itemSlot) {
         let propertyDictionary = {
@@ -1059,6 +1092,8 @@ class Item extends ObservableObject {
             health: 2,
             regeneration: 2,
             damage: 2,
+            criticalChance: 2,
+            criticalMultiplier: 2,
             percent_armor: 1,
             percent_speed: 1,
             percent_health: 1,
@@ -1080,6 +1115,8 @@ class Item extends ObservableObject {
                     propertyDictionary.percent_damage = 4;
                     propertyDictionary.speed = 4;
                     propertyDictionary.percent_speed = 4;
+                    propertyDictionary.criticalChance = 4;
+                    propertyDictionary.criticalMultiplier = 4;
                 }
                 break;
             case "headArmor": 
